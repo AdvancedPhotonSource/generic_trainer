@@ -430,7 +430,10 @@ class Trainer:
             pred_dict = self.get_pred_dict(preds)
             for i in range(len(preds), len(self.loss_criterion)):
                 this_loss_func = self.loss_criterion[i]
-                this_loss_tensor = this_loss_func(**pred_dict)
+                try:
+                    this_loss_tensor = this_loss_func(**pred_dict)
+                except TypeError:
+                    this_loss_tensor = this_loss_func(*preds)
                 total_loss_tensor = total_loss_tensor + this_loss_tensor
                 loss_records[i + 1] += this_loss_tensor.detach().item()
         loss_records[0] += total_loss_tensor.detach().item()
