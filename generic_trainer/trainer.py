@@ -116,15 +116,15 @@ class LossTracker(dict):
         return names
 
     def print_losses(self):
-        logger.info('Epoch: %d | All | Train Loss: %.5f | Val Loss: %.5f' % (
+        logger.debug('Epoch: %d | All | Train Loss: %.5f | Val Loss: %.5f' % (
             self.current_epoch, self['loss'][-1], self['val_loss'][-1]))
         for i_pred, pred_name in enumerate(self.pred_names):
-            logger.info('Epoch: %d | %s  | Train Loss: %.4f | Val Loss: %.4f' % (
+            logger.debug('Epoch: %d | %s  | Train Loss: %.4f | Val Loss: %.4f' % (
                 self.current_epoch, pred_name.upper(),
                 self['loss_{}'.format(pred_name)][-1],
                 self['val_loss_{}'.format(pred_name)][-1]))
         if len(self['lrs']) > 0:
-            logger.info('Epoch: %d | Ending LR: %.6f ' % (self.current_epoch, self['lrs'][-1]))
+            logger.debug('Epoch: %d | Ending LR: %.6f ' % (self.current_epoch, self['lrs'][-1]))
 
     def plot(self, quantities=('loss', 'val_loss'), save_path=None):
         plt.figure()
@@ -367,31 +367,26 @@ class Trainer:
         self.learning_rate = self.configs.learning_rate_per_process * self.num_processes
 
     def build_dataloaders(self):
-        shuffle = True
         drop_last = False
-        training_sampler = None
-        validation_sampler = None
         # Need double check on this.
         if self.parallelization_type == 'multi_node':
-            training_sampler = torch.utils.data.distributed.DistributedSampler(
-                self.training_dataset, num_replicas=self.num_processes, rank=self.rank, shuffle=True)
-            validation_sampler = torch.utils.data.distributed.DistributedSampler(
-                self.validation_dataset, num_replicas=self.num_processes, rank=self.rank, shuffle=True)
-            shuffle = False
+            # PyTorch documentation recommends the use of DistributedSampler for DDP, but I found it yields
+            # identical data for all ranks for some reason, so we just use an ordinary data loader and distribute
+            # data to ranks in process_data_loader_yield().
             drop_last = True
         # ALCF documentation mentions that there is a bug in Pytorch's multithreaded data loaders with
         # distributed training across multiple nodes. Therefore, `num_workers` is set to 0. See also:
         # https://docs.alcf.anl.gov/polaris/data-science-workflows/frameworks/pytorch/.
-        self.training_dataloader = DataLoader(self.training_dataset, shuffle=shuffle,
+        self.training_dataloader = DataLoader(self.training_dataset, shuffle=True,
                                               batch_size=self.all_proc_batch_size,
                                               collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                               generator=self.get_dataloader_generator(), num_workers=0,
-                                              sampler=training_sampler, drop_last=drop_last)
-        self.validation_dataloader = DataLoader(self.validation_dataset, shuffle=shuffle,
+                                              drop_last=drop_last)
+        self.validation_dataloader = DataLoader(self.validation_dataset, shuffle=True,
                                                 batch_size=self.all_proc_batch_size,
                                                 collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                 generator=self.get_dataloader_generator(), num_workers=0,
-                                                sampler=validation_sampler, drop_last=drop_last)
+                                                drop_last=drop_last)
 
     def run_training(self):
         for self.current_epoch in range(self.current_epoch, self.num_epochs):
@@ -414,6 +409,7 @@ class Trainer:
         :param loss_records: list[float]. A list that keep tracks of the accumulated losses in the current epoch.
                              These values are just for record keeping and are not tensors.
         :param preds: list[torch.Tensor]. The list of predictions.
+        :param labels: list[torch.Tensor]. The list of labels.
         :return: list, torch.Tensor. Updated loss records and total loss tensor.
         """
         # Compute losses
@@ -518,6 +514,11 @@ class Trainer:
         if self.configs.task_type == 'classification':
             self.loss_tracker.clear_classification_results_and_labels()
         for i, data_and_labels in enumerate(tqdm(self.training_dataloader, disable=(not self.verbose))):
+            logger.info('Dataloader yielded {} items (or samples).'.format(len(data_and_labels)))
+            if hasattr(data_and_labels[0], 'shape'):
+                logger.info('The first item of dataloader yield has shape {}.'.format(data_and_labels[0].shape))
+            else:
+                logger.info('The first sample of dataloader yield has length {}.'.format(len(data_and_labels[0])))
             data, labels = self.process_data_loader_yield(data_and_labels)
             preds = self.model(data)
             losses, total_loss_tensor = self.compute_losses(losses, preds, labels)
@@ -568,7 +569,7 @@ class Trainer:
 
         # Update saved model if val loss is lower
         if is_best:
-            logger.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
+            logger.debug("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
             self.update_saved_model(filename='best_model.pth')
 
@@ -609,13 +610,13 @@ class Trainer:
         if self.parallelization_type == 'single_node':
             if self.configs.pretrained_model_path is not None:
                 if self.configs.load_pretrained_encoder_only:
-                    logger.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
+                    logger.debug('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path, subcomponent='backbone_model')
                 else:
-                    logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
+                    logger.debug('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path)
             elif self.configs.checkpoint_dir is not None:
-                logger.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
+                logger.debug('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
                 self.load_model(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth'))
 
         self.build_parallelism()
@@ -624,17 +625,17 @@ class Trainer:
         # DistributedDataParallel(model).
         if self.parallelization_type == 'multi_node':
             if self.configs.pretrained_model_path is not None:
-                logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
+                logger.debug('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                 self.load_model(self.configs.pretrained_model_path)
             elif self.configs.checkpoint_dir is not None:
-                logger.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
+                logger.debug('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
                 self.load_model(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth'))
 
     def build_parallelism(self):
         if self.parallelization_type == 'single_node':
             if self.device.type == 'cuda' and self.num_local_devices > 1:
                 self.model = nn.DataParallel(self.model)
-                logger.info('Using DataParallel with {} devices.'.format(self.num_local_devices))
+                logger.debug('Using DataParallel with {} devices.'.format(self.num_local_devices))
             self.model.to(self.device)
 
         elif self.parallelization_type == 'multi_node':
@@ -955,7 +956,7 @@ class Pretrainer(Trainer):
 
         # Update saved model if val loss is lower
         if is_best:
-            logger.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
+            logger.debug("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
             self.update_saved_model(filename='best_model.pth')
 
