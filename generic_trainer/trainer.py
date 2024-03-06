@@ -400,7 +400,8 @@ class Trainer:
 
             if self.verbose:
                 self.loss_tracker.print_losses()
-        self.update_saved_model(filename='final_model.pth')
+        if self.rank == 0:
+            self.update_saved_model(filename='final_model.pth')
 
     def compute_losses(self, loss_records, preds, labels):
         """
@@ -419,7 +420,11 @@ class Trainer:
                 this_loss_func = self.loss_criterion
             else:
                 this_loss_func = self.loss_criterion[i_pred]
-            this_loss_tensor = this_loss_func(preds[i_pred], labels[i_pred])
+            # Try casting labels to be the same type as preds. If it doesn't work, use the original type.
+            try:
+                this_loss_tensor = this_loss_func(preds[i_pred], labels[i_pred].type(preds[i_pred].dtype))
+            except:
+                this_loss_tensor = this_loss_func(preds[i_pred], labels[i_pred])
             total_loss_tensor = total_loss_tensor + this_loss_tensor
             loss_records[i_pred + 1] += this_loss_tensor.detach().item()
         if hasattr(self.loss_criterion, '__len__') and len(self.loss_criterion) > len(preds):
@@ -514,11 +519,6 @@ class Trainer:
         if self.configs.task_type == 'classification':
             self.loss_tracker.clear_classification_results_and_labels()
         for i, data_and_labels in enumerate(tqdm(self.training_dataloader, disable=(not self.verbose))):
-            logger.info('Dataloader yielded {} items (or samples).'.format(len(data_and_labels)))
-            if hasattr(data_and_labels[0], 'shape'):
-                logger.info('The first item of dataloader yield has shape {}.'.format(data_and_labels[0].shape))
-            else:
-                logger.info('The first sample of dataloader yield has length {}.'.format(len(data_and_labels[0])))
             data, labels = self.process_data_loader_yield(data_and_labels)
             preds = self.model(data)
             losses, total_loss_tensor = self.compute_losses(losses, preds, labels)
@@ -542,7 +542,8 @@ class Trainer:
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_accuracy_history(acc_dict, 'train')
 
-        self.save_model_and_states_checkpoint()
+        if self.rank == 0:
+            self.save_model_and_states_checkpoint()
 
         if self.configs.post_training_epoch_hook is not None:
             self.configs.post_training_epoch_hook()
@@ -563,15 +564,18 @@ class Trainer:
             logger.warning('Validation set might be too small that at least 1 rank did not get any validation data.')
         n_batches = np.max([n_batches, 1])
         last_best_val_loss = self.loss_tracker['best_val_loss']
+
         is_best = self.loss_tracker.update_losses([l / n_batches for l in losses],
                                                   epoch=self.current_epoch, type='val_loss')
-        self.write_training_info()
+        if self.rank == 0:
+            self.write_training_info()
 
         # Update saved model if val loss is lower
         if is_best:
             logger.debug("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
-            self.update_saved_model(filename='best_model.pth')
+            if self.rank == 0:
+                self.update_saved_model(filename='best_model.pth')
 
         if self.configs.task_type == 'classification':
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
@@ -677,13 +681,11 @@ class Trainer:
             try:
                 m = getattr(self.model, subcomponent)
             except:
-                m = getattr(self.model.module, subcomponent)
-        if self.rank == 0:
-            try:
-                torch.save(m.module.state_dict(), path)
-            except AttributeError:
-                torch.save(m.state_dict(), path)
-        self.barrier()
+                m = getattr(self.model.module, subcomponent) 
+        try:
+            torch.save(m.module.state_dict(), path)
+        except AttributeError:
+            torch.save(m.state_dict(), path)
 
     def update_saved_model(self, filename='best_model.pth', save_configs=True, subcomponent=None):
         """
@@ -691,14 +693,12 @@ class Trainer:
         """
         path = self.configs.model_save_dir
         dest_path = os.path.join(path, filename)
-        if self.rank == 0:
-            if not os.path.isdir(path):
-                os.mkdir(path)
-            if os.path.exists(dest_path):
-                os.remove(dest_path)
-        self.barrier()
+        if not os.path.isdir(path):
+            os.mkdir(path)
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
         self.save_model(dest_path, subcomponent=subcomponent)
-        if self.rank == 0 and save_configs:
+        if save_configs:
             self.configs.dump_to_json(os.path.join(path, 'configs.json'))
 
     def generate_state_dict(self):
@@ -716,7 +716,8 @@ class Trainer:
     def save_model_and_states_checkpoint(self):
         state_dict = self.generate_state_dict()
         torch.save(state_dict, os.path.join(self.configs.model_save_dir, 'checkpoint.state'))
-        self.update_saved_model('checkpoint_model.pth')
+        if self.rank == 0:
+            self.update_saved_model('checkpoint_model.pth')
 
     def load_state_checkpoint(self):
         if self.configs.checkpoint_dir is None:
@@ -952,13 +953,15 @@ class Pretrainer(Trainer):
         last_best_val_loss = self.loss_tracker['best_val_loss']
         is_best = self.loss_tracker.update_losses([l / n_batches for l in losses],
                                                   epoch=self.current_epoch, type='val_loss')
-        self.write_training_info()
+        if self.rank == 0:
+            self.write_training_info()
 
         # Update saved model if val loss is lower
         if is_best:
             logger.debug("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
-            self.update_saved_model(filename='best_model.pth')
+            if self.rank == 0:
+                self.update_saved_model(filename='best_model.pth')
 
         if self.configs.post_validation_epoch_hook is not None:
             self.configs.post_validation_epoch_hook()
