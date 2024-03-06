@@ -4,6 +4,12 @@ import copy
 import re
 import warnings
 
+try:
+    from mpi4py import MPI
+except:
+    MPI = None
+    warnings.warn('Since mpi4py is not installed, some multi-node features might be not available.')
+
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, Subset
@@ -182,6 +188,22 @@ class LossTracker(dict):
         """
         for i, pred_name in enumerate(self.pred_names):
             self['{}_acc_{}'.format(type, pred_name)].append(acc_dict[pred_name])
+
+    def sync_classification_preds_and_labels_across_ranks(self):
+        if MPI is None:
+            return
+        comm = MPI.COMM_WORLD
+        n_ranks = comm.Get_size()
+        if n_ranks == 1:
+            return
+        for i, pred_name in enumerate(self.pred_names):
+            assert isinstance(self['classification_preds_{}'.format(pred_name)], list)
+            self['classification_preds_{}'.format(pred_name)] = (
+                comm.allreduce(self['classification_preds_{}'.format(pred_name)], op=MPI.SUM))
+            assert isinstance(self['classification_labels_{}'.format(pred_name)], list)
+            self['classification_labels_{}'.format(pred_name)] = (
+                comm.allreduce(self['classification_labels_{}'.format(pred_name)], op=MPI.SUM))
+
 
 
 class Trainer:
@@ -536,9 +558,11 @@ class Trainer:
 
             n_batches += 1
         # Divide cumulative loss by number of batches-- sli inaccurate because last batch is different size
-        self.loss_tracker.update_losses([l / n_batches for l in losses], type='loss', epoch=self.current_epoch)
+        losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
+        self.loss_tracker.update_losses(losses, type='loss', epoch=self.current_epoch)
 
         if self.configs.task_type == 'classification':
+            self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_accuracy_history(acc_dict, 'train')
 
@@ -565,8 +589,8 @@ class Trainer:
         n_batches = np.max([n_batches, 1])
         last_best_val_loss = self.loss_tracker['best_val_loss']
 
-        is_best = self.loss_tracker.update_losses([l / n_batches for l in losses],
-                                                  epoch=self.current_epoch, type='val_loss')
+        losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
+        is_best = self.loss_tracker.update_losses(losses, epoch=self.current_epoch, type='val_loss')
         if self.rank == 0:
             self.write_training_info()
 
@@ -578,6 +602,7 @@ class Trainer:
                 self.update_saved_model(filename='best_model.pth')
 
         if self.configs.task_type == 'classification':
+            self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_accuracy_history(acc_dict, 'val')
 
@@ -804,6 +829,27 @@ class Trainer:
         elif self.parallelization_type == 'multi_node':
             dist.barrier()
 
+    def communicate_value_across_ranks(self, var, mode='average'):
+        """
+        Communicate values across MPI ranks. This can be used for allreduce (averaging the values of a variable
+        across all ranks), or gathering (allowing each rank to receive the values from other ranks and concatenate
+        them).
+
+        :param var: Any. The variable to be communicated.
+        :param mode: str. Can be the following:
+                     - 'average': averages the value across all ranks.
+                     - 'gather': gather the value from all ranks, and concatenate them as a list.
+        :return: value after communication.
+        """
+        if MPI is None or self.num_processes == 1:
+            return var
+        comm = MPI.COMM_WORLD
+        if mode == 'average':
+            var = comm.allreduce(var, op=MPI.SUM) / self.num_processes
+        elif mode == 'gather':
+            var = comm.allgather(var)
+        return var
+
     def cleanup_memory(self):
         self.model = None
         if torch.cuda.is_available():
@@ -915,7 +961,7 @@ class Pretrainer(Trainer):
     def run_training_epoch(self):
         losses = self.get_epoch_loss_buffer()
         n_batches = 0
-        for i, data in enumerate(tqdm(self.training_dataloader, disable=(not self.verbose))):
+        for i, data in enumerate(tqdm(self.training_dataloader, disable=((not self.verbose) or (self.rank != 0)))):
             # elements of data are supposed to be 2 different augmentations.
             data = self.process_data_loader_yield(data)
             preds = self.model(*data)
@@ -965,7 +1011,6 @@ class Pretrainer(Trainer):
 
         if self.configs.post_validation_epoch_hook is not None:
             self.configs.post_validation_epoch_hook()
-
 
     def update_saved_model(self, filename='best_model.pth'):
         """
