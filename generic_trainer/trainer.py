@@ -122,15 +122,15 @@ class LossTracker(dict):
         return names
 
     def print_losses(self):
-        logger.debug('Epoch: %d | All | Train Loss: %.5f | Val Loss: %.5f' % (
+        logger.info('Epoch: %d | All | Train Loss: %.5f | Val Loss: %.5f' % (
             self.current_epoch, self['loss'][-1], self['val_loss'][-1]))
         for i_pred, pred_name in enumerate(self.pred_names):
-            logger.debug('Epoch: %d | %s  | Train Loss: %.4f | Val Loss: %.4f' % (
+            logger.info('Epoch: %d | %s  | Train Loss: %.4f | Val Loss: %.4f' % (
                 self.current_epoch, pred_name.upper(),
                 self['loss_{}'.format(pred_name)][-1],
                 self['val_loss_{}'.format(pred_name)][-1]))
         if len(self['lrs']) > 0:
-            logger.debug('Epoch: %d | Ending LR: %.6f ' % (self.current_epoch, self['lrs'][-1]))
+            logger.info('Epoch: %d | Ending LR: %.6f ' % (self.current_epoch, self['lrs'][-1]))
 
     def plot(self, quantities=('loss', 'val_loss'), save_path=None):
         plt.figure()
@@ -596,7 +596,7 @@ class Trainer:
 
         # Update saved model if val loss is lower
         if is_best:
-            logger.debug("Saving improved model after Val Loss improved from %.5f to %.5f" % (
+            logger.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
             if self.rank == 0:
                 self.update_saved_model(filename='best_model.pth')
@@ -639,13 +639,13 @@ class Trainer:
         if self.parallelization_type == 'single_node':
             if self.configs.pretrained_model_path is not None:
                 if self.configs.load_pretrained_encoder_only:
-                    logger.debug('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
+                    logger.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path, subcomponent='backbone_model')
                 else:
-                    logger.debug('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
+                    logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path)
             elif self.configs.checkpoint_dir is not None:
-                logger.debug('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
+                logger.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
                 self.load_model(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth'))
 
         self.build_parallelism()
@@ -654,17 +654,17 @@ class Trainer:
         # DistributedDataParallel(model).
         if self.parallelization_type == 'multi_node':
             if self.configs.pretrained_model_path is not None:
-                logger.debug('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
+                logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                 self.load_model(self.configs.pretrained_model_path)
             elif self.configs.checkpoint_dir is not None:
-                logger.debug('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
+                logger.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
                 self.load_model(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth'))
 
     def build_parallelism(self):
         if self.parallelization_type == 'single_node':
             if self.device.type == 'cuda' and self.num_local_devices > 1:
                 self.model = nn.DataParallel(self.model)
-                logger.debug('Using DataParallel with {} devices.'.format(self.num_local_devices))
+                logger.info('Using DataParallel with {} devices.'.format(self.num_local_devices))
             self.model.to(self.device)
 
         elif self.parallelization_type == 'multi_node':
@@ -1004,7 +1004,7 @@ class Pretrainer(Trainer):
 
         # Update saved model if val loss is lower
         if is_best:
-            logger.debug("Saving improved model after Val Loss improved from %.5f to %.5f" % (
+            logger.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
             if self.rank == 0:
                 self.update_saved_model(filename='best_model.pth')
