@@ -420,7 +420,7 @@ class Trainer:
             self.model.eval()
             self.run_validation()
 
-            if self.verbose:
+            if self.verbose and self.rank == 0:
                 self.loss_tracker.print_losses()
         if self.rank == 0:
             self.update_saved_model(filename='final_model.pth')
@@ -692,25 +692,25 @@ class Trainer:
             if self.parallelization_type == 'single_node':
                 state_dict = torch.load(path)
             else:
-                map_location = {'cuda:%d' % 0: 'cuda:%d' % self.rank}
-                state_dict = torch.load(path, map_location=map_location)
-        if subcomponent is None:
-            self.model.load_state_dict(state_dict)
+                # In multi-node mode each rank should only get 1 GPU, so we do not use map_location.
+                state_dict = torch.load(path)
+        if isinstance(self.model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)):
+            m = self.model.module
         else:
-            getattr(self.model, subcomponent).load_state_dict(state_dict)
+            m = self.model
+        if subcomponent is None:
+            m.load_state_dict(state_dict)
+        else:
+            getattr(m, subcomponent).load_state_dict(state_dict)
 
     def save_model(self, path, subcomponent=None):
-        if subcomponent is None:
-            m = self.model
+        if isinstance(self.model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)):
+            m = self.model.module
         else:
-            try:
-                m = getattr(self.model, subcomponent)
-            except:
-                m = getattr(self.model.module, subcomponent) 
-        try:
-            torch.save(m.module.state_dict(), path)
-        except AttributeError:
-            torch.save(m.state_dict(), path)
+            m = self.model
+        if subcomponent is not None:
+            m = getattr(m, subcomponent)
+        torch.save(m.state_dict(), path)
 
     def update_saved_model(self, filename='best_model.pth', save_configs=True, subcomponent=None):
         """
