@@ -549,7 +549,7 @@ class Trainer:
 
             # Zero current grads and do backprop
             self.optimizer.zero_grad()
-            total_loss_tensor.backward()
+            self.run_backprop(total_loss_tensor)
             self.optimizer.step()
 
             # Update the LR according to the schedule -- CyclicLR updates each batch
@@ -608,6 +608,9 @@ class Trainer:
 
         if self.configs.post_validation_epoch_hook is not None:
             self.configs.post_validation_epoch_hook()
+
+    def run_backprop(self, loss_node):
+        loss_node.backward()
 
     def build_split_datasets(self):
         train_idx, val_idx = train_test_split(list(range(len(self.dataset))), test_size=self.validation_ratio)
@@ -1021,3 +1024,51 @@ class Pretrainer(Trainer):
         super().update_saved_model(filename)
         encoder_filename = os.path.splitext(filename)[0] + '_encoder.pth'
         super().update_saved_model(encoder_filename, save_configs=False, subcomponent='encoder')
+
+
+class HuggingFaceAccelerateTrainer(Trainer):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.accelerator = None
+
+    def build(self):
+        if self.configs.random_seed is not None:
+            set_all_random_seeds(self.configs.random_seed)
+
+        # When default device is set to `cuda`, DataLoader with `shuffle=True` would crash when yielding due to an
+        # internal bug of PyTorch. Therefore, we set default device to `cpu` here and manually assign device to objects.
+        set_default_device('cpu')
+        self.check_configs()
+
+        self.build_loss_tracker()
+
+        self.build_ranks()
+        self.build_scalable_parameters()
+        self.build_device()
+
+        self.build_split_datasets()
+        self.build_dataloaders()
+
+        self.build_model()
+        self.build_optimizer()
+        self.build_scheduler()
+        self.build_accelerate()
+
+        self.load_state_checkpoint()
+
+        self.build_dir()
+
+    def build_model(self):
+        self.model = self.configs.model_class(**self.configs.model_params.__dict__)
+
+    def build_accelerate(self):
+        from accelerate import Accelerator
+        self.accelerator = Accelerator()
+
+        self.model, self.optimizer, self.training_dataloader, self.scheduler = self.accelerator.prepare(
+            self.model, self.optimizer, self.training_dataloader, self.scheduler
+        )
+
+    def run_backprop(self, loss_node):
+        self.accelerator.backward(loss_node)

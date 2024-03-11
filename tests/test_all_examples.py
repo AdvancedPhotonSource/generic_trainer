@@ -1,10 +1,9 @@
 import os
 import shutil
 import subprocess as sp
-import glob
 
 
-def test_all():
+def test_all_examples():
     script_list = [
         'classification.py',
         'image_regression.py',
@@ -20,4 +19,4 @@ def test_all():
 
 
 if __name__ == '__main__':
-    test_all()
+    test_all_examples()
