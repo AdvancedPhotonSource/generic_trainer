@@ -896,16 +896,12 @@ class Pretrainer(Trainer):
                 # it is a tuple of samples. Each element of the tuple is another tuple
                 # containing the data and labels of that sample.
                 data_chunk = data[self.rank * bsize_per_rank:(self.rank + 1) * bsize_per_rank]
-                data = []
-                for i in range(len(data_chunk)):
-                    data.append(data_chunk[i][0])
-                data = torch.concat(data, dim=0).to(self.device)
                 n_data = len(data[0])
-                data_list = [[] for i in range(n_data)]
+                data_proc = [[] for i in range(n_data)]
                 for i_item in range(n_data):
-                    for i_sample in range(len(data)):
-                        data_list[i_item].append(data[i_sample][i_item])
-                data = [torch.concat(data_list[i]).to(self.device) for i in range(len(data_list))]
+                    for i in range(len(data_chunk)):
+                        data_proc[i_item].append(data_chunk[i][i_item])
+                data = [torch.concat(data_proc[i]).to(self.device) for i in range(len(data_proc))]
             else:
                 # In this case, data_and_labels is organized in a item-then-sample order:
                 # it is a tuple of items. Each element of the tuple is a tensor of
@@ -928,11 +924,6 @@ class Pretrainer(Trainer):
             else:
                 # In this case, data_and_labels is in item-then-sample order.
                 data = [data[i].to(self.device) for i in range(len(data))]
-        # data needs to be a 3D tensor of [n_batches, 1, spec_len]. The 2nd dimension is necessary because it is
-        # treated as the channel dimension.
-        for i, d in enumerate(data):
-            if len(d.shape) == 2:
-                data[i] = d[:, None, :]
         return data
 
     def compute_losses(self, loss_records, preds, *args, **kwargs):
