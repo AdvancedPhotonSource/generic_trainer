@@ -32,6 +32,7 @@ if __name__ == '__main__':
         optimizer=torch.optim.AdamW,
         optimizer_params={'weight_decay': 0.01},
         num_epochs=5,
+        # checkpoint_dir='temp',
         model_save_dir='temp',
         task_type='classification'
     )

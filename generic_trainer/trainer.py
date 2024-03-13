@@ -736,7 +736,7 @@ class Trainer:
         """
         Updates saved model if validation loss is minimum.
         """
-        if not self.gatekeeper.should_proceed(gate_kept=True):
+        if not self.gatekeeper.should_proceed(gate_kept=run_with_only_rank_0):
             return
         path = self.configs.model_save_dir
         dest_path = os.path.join(path, filename)
@@ -1070,8 +1070,6 @@ class HuggingFaceAccelerateTrainer(Trainer):
         self.build_scheduler()
         self.build_accelerate()
 
-        self.load_state_checkpoint()
-
         self.build_dir()
 
     def build_model(self):
@@ -1085,9 +1083,53 @@ class HuggingFaceAccelerateTrainer(Trainer):
             self.model, self.optimizer, self.training_dataloader, self.scheduler
         )
 
+        if self.configs.checkpoint_dir is not None:
+            self.load_state_checkpoint()
+
     def run_backprop(self, loss_node):
         self.accelerator.backward(loss_node)
 
     def move_to_device(self, var):
         # HuggingFace Accelerate should not need manual data offloading.
         return var
+
+    def update_saved_model(self, filename='best_model', save_configs=True, subcomponent=None, **kwargs):
+        """
+        Save model checkpoint.
+        HuggingFace Accelerate takes a directory to save the model. This directory will be named as
+        basename(splitext(filename)[0]).
+
+        :param filename: str. Name of the checkpoint directory. If it comes with an extension, the extension will
+                         be removed.
+        :param save_configs: bool. If True, trainer configs will also be saved as a JSON.
+        :param subcomponent: str. If not None, only the subcomponent of the model with this name will be saved.
+        """
+        path = os.path.join(self.configs.model_save_dir, os.path.splitext(filename)[0])
+        self.accelerator.save_state(path)
+        if save_configs and self.gatekeeper.should_proceed(gate_kept=True):
+            self.configs.dump_to_json(os.path.join(self.configs.model_save_dir, 'configs.json'))
+
+    def save_model_and_states_checkpoint(self):
+        # Save epoch counter and loss tracker.
+        state_dict = self.generate_state_dict()
+        torch.save(state_dict, os.path.join(self.configs.model_save_dir, 'checkpoint.state'))
+
+        # Save model, optimizer, scheduler, and dataloader states.
+        self.update_saved_model(filename='checkpoint_model')
+
+    def load_model(self):
+        self.load_state_checkpoint()
+
+    def load_state_checkpoint(self):
+        if self.configs.checkpoint_dir is None:
+            return
+        # Accelerator loads model, optimizer, scheduler, and dataloader states.
+        self.accelerator.load_state(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model'))
+
+        # Also load epoch counter and loss tracker.
+        checkpoint_fname = os.path.join(self.configs.checkpoint_dir, 'checkpoint.state')
+        if not os.path.exists(checkpoint_fname):
+            logger.warning('Checkpoint not found in {}.'.format(checkpoint_fname))
+        state_dict = torch.load(checkpoint_fname)
+        self.current_epoch = state_dict['current_epoch']
+        self.loss_tracker = state_dict['loss_tracker']

@@ -166,6 +166,13 @@ class TrainingConfig(Config):
     """
 
     num_epochs: int = 60
+    """
+    The number of epochs. When loading a checkpoint using `TrainingConfig.checkpoint_dir`, the epoch counter continues
+    from the checkpoint, and this parameters sets the final number of epochs: for example, if the checkpoint is at 
+    epoch 200 and `num_epochs` is 300, then only 100 more epochs will be run in the current job. However, if
+    `TrainingConfigl.pretrained_model_path` is used instead, then the epoch counter and all the other states start from 
+    scratch. 
+    """
 
     learning_rate_per_process: float = 1e-3
     """
@@ -185,7 +192,9 @@ class TrainingConfig(Config):
     checkpoint_dir: Any = None
     """
     The checkpoint directory. If not None, the trainer will load the checkpoint that contains the model,
-    optimizer, and all the other state dictionaries from it.
+    optimizer, and all the other state dictionaries from it. The given directory should be the one that contains
+    "checkpoint_model.pth"; if using HuggingFaceAccelerateTrianer, this should be the directory that contains
+    "checkpoint_model".
     """
 
     pretrained_model_path: Any = None
