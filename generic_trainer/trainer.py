@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Optional, Any
 import itertools
@@ -779,10 +780,18 @@ class Trainer:
             return
         path = self.configs.model_save_dir
         dest_path = os.path.join(path, filename)
-        if not os.path.isdir(path):
-            os.mkdir(path)
-        if os.path.exists(dest_path):
-            os.remove(dest_path)
+        try:
+            if not os.path.isdir(path):
+                os.mkdir(path)
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
+        except Exception as e:
+            logging.warning('The following exception occurred when creating directories/removing old files in '
+                            'updated_saved_model: \n{}\nThis could happen if multiple processes are competing '
+                            'for I/O operations. It normally should not happen, but could occur if you are '
+                            'using the updated_saved_model method defined in the base class in a subclass using '
+                            'high-level wrappers like HuggingFace Accelerate. For now, you can ignore this warning.'.
+                            format(e))
         self.save_model(dest_path, subcomponent=subcomponent)
         if save_configs:
             self.configs.dump_to_json(os.path.join(path, 'configs.json'))
@@ -1037,7 +1046,12 @@ class HuggingFaceAccelerateTrainer(Trainer):
             self.model, self.optimizer, self.training_dataloader, self.scheduler
         )
 
-        if self.configs.checkpoint_dir is not None:
+        if self.configs.pretrained_model_path is not None:
+            if self.configs.load_pretrained_encoder_only:
+                self.load_model(self.configs.pretrained_model_path, subcomponent='encoder')
+            else:
+                self.load_model(self.configs.pretrained_model_path)
+        elif self.configs.checkpoint_dir is not None:
             self.load_state_checkpoint()
 
     def run_model_update_step(self, loss_node):
@@ -1073,8 +1087,10 @@ class HuggingFaceAccelerateTrainer(Trainer):
         # Save model, optimizer, scheduler, and dataloader states.
         self.update_saved_model(filename='checkpoint_model')
 
-    def load_model(self, **kwargs):
-        self.load_state_checkpoint()
+    def load_model(self, path=None, state_dict=None, subcomponent=None):
+        # This would also load optimizer, scheduler and dataloader states.
+        # TODO: find a way to load only the encoder.
+        self.accelerator.load_state(path)
 
     def load_state_checkpoint(self):
         if self.configs.checkpoint_dir is None:
@@ -1089,3 +1105,41 @@ class HuggingFaceAccelerateTrainer(Trainer):
         state_dict = torch.load(checkpoint_fname)
         self.current_epoch = state_dict['current_epoch']
         self.loss_tracker = state_dict['loss_tracker']
+
+
+class HuggingFaceAcceleratePretrainer(HuggingFaceAccelerateTrainer, Pretrainer):
+    def __init__(self, configs: TrainingConfig, rank=None, num_processes=None, *args, **kwargs):
+        """
+        Trainer constructor.
+
+        :param configs: TrainingConfig.
+        :param rank: int. The current index of rank. This argument should be kept None unless multi_node
+                     parallelization is intended and training is run using torch.multiprocessing.spawn
+                     (instead of torchrun, where the rank can be automatically figured out and does not need
+                     to be passed to the trainer explicitly).
+        :param num_processes: int. The total number of processes. Similar to `rank`, this argument should be kept
+                              None unless multi_node is intended and training is run using torch.multiprocessing.spawn.
+        """
+        HuggingFaceAccelerateTrainer.__init__(self, configs, rank, num_processes, *args, **kwargs)
+        self.configs.task_type = None
+
+    def update_saved_model(self, filename='best_model.pth', **kwargs):
+        """
+        HuggingFace Accelerate's save_state won't save the encoder parameters of a Siamese network at all
+        because they are shared tensors. Even with safe_serialization set to False, it still complains about
+        missing parameters in the encoder when loading state_dict. Therefore, we save and load models and
+        states using the native PyTorch method. It will work because model objects in HuggingFace Accelerate
+        are just PyTorch's DistributedDataParallelModels.
+
+        This is really a makeshift and is causing inconsistency between HuggingFaceAccelerateTrainer and
+        HuggingFaceAcceleratePretrainer. It should be fixed at some point.
+        """
+        if not filename.endswith('.pth'):
+            filename = filename + '.pth'
+        Pretrainer.update_saved_model(self, filename, **kwargs)
+
+    def load_state_checkpoint(self):
+        Pretrainer.load_state_checkpoint(self)
+
+    def load_model(self, **kwargs):
+        Pretrainer.load_model(self, **kwargs)
