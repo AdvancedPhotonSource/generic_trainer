@@ -1,4 +1,5 @@
 import os
+from typing import Optional, Any
 import itertools
 import copy
 import re
@@ -468,6 +469,7 @@ class Trainer:
                 this_loss_tensor = this_loss_func(preds[i_pred], labels[i_pred])
             total_loss_tensor = total_loss_tensor + this_loss_tensor
             loss_records[i_pred + 1] += this_loss_tensor.detach().item()
+
         if hasattr(self.loss_criterion, '__len__') and len(self.loss_criterion) > len(preds):
             pred_dict = self.get_pred_dict(preds)
             for i in range(len(preds), len(self.loss_criterion)):
@@ -479,7 +481,6 @@ class Trainer:
                 total_loss_tensor = total_loss_tensor + this_loss_tensor
                 loss_records[i + 1] += this_loss_tensor.detach().item()
         loss_records[0] += total_loss_tensor.detach().item()
-
         return loss_records, total_loss_tensor
 
     def get_pred_dict(self, preds):
@@ -493,13 +494,56 @@ class Trainer:
             d[name] = preds[i]
         return d
 
-    def process_data_loader_yield(self, data_and_labels):
+    def process_data_loader_yield_sample_first(self, data_and_labels, data_label_separation_index):
+        n_items = len(data_and_labels[0])
+        n_samples = len(data_and_labels)
+        if data_label_separation_index is None:
+            data_label_separation_index = n_items
+        data_list = []
+        for i_item in range(data_label_separation_index):
+            data_all_samples_this_item = [data_and_labels[i_sample][i_item] for i_sample in range(n_samples)]
+            data_all_samples_this_item = self.move_to_device(torch.concat(data_all_samples_this_item, dim=0))
+            data_list.append(data_all_samples_this_item)
+        label_list = []
+        for i_item in range(data_label_separation_index, n_items):
+            label_all_samples_this_item = [data_and_labels[i_sample][i_item] for i_sample in range(n_samples)]
+            label_all_samples_this_item = self.move_to_device(torch.concat(label_all_samples_this_item, dim=0))
+            label_list.append(label_all_samples_this_item)
+        return data_list, label_list
+
+    def process_data_loader_yield_item_first(self, data_and_labels, data_label_separation_index):
+        n_items = len(data_and_labels)
+        if data_label_separation_index is None:
+            data_label_separation_index = n_items
+        data_list = []
+        for i_item in range(data_label_separation_index):
+            data_all_samples_this_item = data_and_labels[i_item]
+            data_all_samples_this_item = self.move_to_device(data_all_samples_this_item)
+            data_list.append(data_all_samples_this_item)
+        label_list = []
+        for i_item in range(data_label_separation_index, n_items):
+            label_all_samples_this_item = data_and_labels[i_item]
+            label_all_samples_this_item = self.move_to_device(label_all_samples_this_item)
+            label_list.append(label_all_samples_this_item)
+        return data_list, label_list
+
+    def process_data_loader_yield(self, data_and_labels: Any, data_label_separation_index: Optional[int] = 1):
         """
         Disentangles the yields from the dataloader, returning a tuple of (data, label1, label2, ...) with
         each element being a tensor of [batch_size_per_process, ...].
 
         With the collate_fn defined, the yields of dataloader are different between PyTorch 1.x and 2.x. This
         function automatically detects the format and treat the data accordingly.
+
+        :param data_and_labels: Any. The yield of the dataloader. It could be either a tuple of tensors, in which
+                                case of each tensor is the stacked data/label for all samples in the batch, or a
+                                tuple of `batch_size` tuples, where each sub-tuple contains several tensors that are
+                                the data/label of a sample.
+        :param data_label_separation_index: int | None. The separation index of data and label. If this is an integer,
+                                            then the first `data_label_separation_index` items are considered to be
+                                            data, and the rest are labels. If this is None, all items are considered
+                                            to be data.
+        :returns tuple[torch.tensor], tuple[torch.tensor]. 2 tuples for data and labels.
         """
         if self.parallelization_type == 'multi_node':
             bsize_per_rank = self.configs.batch_size_per_process
@@ -508,45 +552,26 @@ class Trainer:
                 # it is a tuple of samples. Each element of the tuple is another tuple
                 # containing the data and labels of that sample.
                 data_and_labels = data_and_labels[self.rank * bsize_per_rank:(self.rank + 1) * bsize_per_rank]
-                data = []
-                for i in range(len(data_and_labels)):
-                    data.append(data_and_labels[i][0])
-                data = self.move_to_device(torch.concat(data, dim=0))
-                n_labels = len(data_and_labels[0]) - 1
-                label_list = [[] for i in range(n_labels)]
-                for i_item in range(n_labels):
-                    for i_sample in range(len(data_and_labels)):
-                        label_list[i_item].append(data_and_labels[i_sample][i_item + 1])
-                labels = [self.move_to_device(torch.concat(label_list[i])) for i in range(len(label_list))]
+                data_list, label_list = self.process_data_loader_yield_sample_first(data_and_labels,
+                                                                                    data_label_separation_index)
             else:
                 # In this case, data_and_labels is organized in a item-then-sample order:
                 # it is a tuple of items. Each element of the tuple is a tensor of
                 # [n_total_batch_size, ...].
-                data = data_and_labels[0][self.rank * bsize_per_rank:(self.rank + 1) * bsize_per_rank]
-                data = self.move_to_device(data)
-                labels = []
-                for i in range(1, len(data_and_labels)):
-                    labels.append(
-                        self.move_to_device(data_and_labels[i][self.rank * bsize_per_rank:(self.rank + 1) * bsize_per_rank])
-                    )
+                data_and_labels = [d[self.rank * bsize_per_rank:(self.rank + 1) * bsize_per_rank]
+                                   for d in data_and_labels]
+                data_list, label_list = self.process_data_loader_yield_item_first(data_and_labels,
+                                                                                  data_label_separation_index)
         else:
             if isinstance(data_and_labels[0], tuple):
                 # In this case, data_and_labels is in sample-then-item order.
-                data = []
-                for i in range(len(data_and_labels)):
-                    data.append(data_and_labels[i][0])
-                data = self.move_to_device(torch.concat(data, dim=0))
-                n_labels = len(data_and_labels[0]) - 1
-                label_list = [[] for i in range(n_labels)]
-                for i_item in range(n_labels):
-                    for i_sample in range(len(data_and_labels)):
-                        label_list[i_item].append(data_and_labels[i_sample][i_item + 1])
-                labels = [self.move_to_device(torch.concat(label_list[i])) for i in range(len(label_list))]
+                data_list, label_list = self.process_data_loader_yield_sample_first(data_and_labels,
+                                                                                    data_label_separation_index)
             else:
                 # In this case, data_and_labels is in item-then-sample order.
-                data = self.move_to_device(data_and_labels[0])
-                labels = [self.move_to_device(data_and_labels[i]) for i in range(1, len(data_and_labels))]
-        return data, labels
+                data_list, label_list = self.process_data_loader_yield_item_first(data_and_labels,
+                                                                                  data_label_separation_index)
+        return data_list, label_list
 
     def get_epoch_loss_buffer(self):
         if hasattr(self.loss_criterion, '__len__'):
@@ -555,22 +580,35 @@ class Trainer:
             n = self.loss_tracker.n_preds + 1
         return [0.0] * n
 
+    def load_data_and_get_loss(self, data_and_labels, loss_buffer):
+        """
+        Load data, run prediction, calculate loss, and return the tracked loss values,
+        the gradient-tracked loss tensor, and predictions and labels. Override this method
+        in subclasses to adapt to different dataloader/model/loss signatures and returned
+        structures.
+
+        :param data_and_labels: Any. The data structure yielded by the dataloader.
+        :param loss_buffer: list[float]. A list that stores the total loss and all sub-losses.
+                            The elements should be constant values, not differentiable tensors.
+        :return: loss_buffer, total_loss_tensor, preds, labels
+        """
+        data, labels = self.process_data_loader_yield(data_and_labels)
+        preds = self.model(*data)
+        losses, total_loss_tensor = self.compute_losses(loss_buffer, preds, labels)
+        return loss_buffer, total_loss_tensor, preds, labels
+
     def run_training_epoch(self):
         losses = self.get_epoch_loss_buffer()
         n_batches = 0
         if self.configs.task_type == 'classification':
             self.loss_tracker.clear_classification_results_and_labels()
         for i, data_and_labels in enumerate(tqdm(self.training_dataloader, disable=(not self.verbose))):
-            data, labels = self.process_data_loader_yield(data_and_labels)
-            preds = self.model(data)
-            losses, total_loss_tensor = self.compute_losses(losses, preds, labels)
+            losses, total_loss_tensor, preds, labels = self.load_data_and_get_loss(data_and_labels, losses)
             if self.configs.task_type == 'classification':
                 self.loss_tracker.update_classification_results_and_labels(preds, labels)
 
             # Zero current grads and do backprop
-            self.optimizer.zero_grad()
-            self.run_backprop(total_loss_tensor)
-            self.optimizer.step()
+            self.run_model_update_step(total_loss_tensor)
 
             # Update the LR according to the schedule -- CyclicLR updates each batch
             self.scheduler.step()
@@ -597,9 +635,7 @@ class Trainer:
         if self.configs.task_type == 'classification':
             self.loss_tracker.clear_classification_results_and_labels()
         for j, data_and_labels in enumerate(self.validation_dataloader):
-            data, labels = self.process_data_loader_yield(data_and_labels)
-            preds = self.model(data)
-            losses, _ = self.compute_losses(losses, preds, labels)
+            losses, _, preds, labels = self.load_data_and_get_loss(data_and_labels, losses)
             if self.configs.task_type == 'classification':
                 self.loss_tracker.update_classification_results_and_labels(preds, labels)
             n_batches += 1
@@ -626,8 +662,10 @@ class Trainer:
         if self.configs.post_validation_epoch_hook is not None:
             self.configs.post_validation_epoch_hook()
 
-    def run_backprop(self, loss_node):
+    def run_model_update_step(self, loss_node):
+        self.optimizer.zero_grad()
         loss_node.backward()
+        self.optimizer.step()
 
     def build_split_datasets(self):
         train_idx, val_idx = train_test_split(list(range(len(self.dataset))), test_size=self.validation_ratio)
@@ -732,7 +770,8 @@ class Trainer:
             m = getattr(m, subcomponent)
         torch.save(m.state_dict(), path)
 
-    def update_saved_model(self, filename='best_model.pth', save_configs=True, subcomponent=None, run_with_only_rank_0=True):
+    def update_saved_model(self, filename='best_model.pth', save_configs=True, subcomponent=None,
+                           run_with_only_rank_0=True):
         """
         Updates saved model if validation loss is minimum.
         """
@@ -905,50 +944,11 @@ class Pretrainer(Trainer):
                               None unless multi_node is intended and training is run using torch.multiprocessing.spawn.
         """
         super().__init__(configs, rank, num_processes, *args, **kwargs)
+        self.configs.task_type = None
 
-    def process_data_loader_yield(self, data):
-        """
-        Disentangles the yields from the dataloader, returning a tuple of (data1, data2) with
-        each element being a tensor of [batch_size_per_process, ...].
-
-        With the collate_fn defined, the yields of dataloader are different between PyTorch 1.x and 2.x. This
-        function automatically detects the format and processes the data accordingly.
-        """
-        if self.parallelization_type == 'multi_node':
-            bsize_per_rank = self.configs.batch_size_per_process
-            if isinstance(data[0], tuple):
-                # In this case, data_and_labels is organized in a sample-then-item order:
-                # it is a tuple of samples. Each element of the tuple is another tuple
-                # containing the data and labels of that sample.
-                data_chunk = data[self.rank * bsize_per_rank:(self.rank + 1) * bsize_per_rank]
-                n_data = len(data[0])
-                data_proc = [[] for i in range(n_data)]
-                for i_item in range(n_data):
-                    for i_sample in range(len(data_chunk)):
-                        data_proc[i_item].append(data_chunk[i_sample][i_item])
-                data = [self.move_to_device(torch.concat(data_proc[i])) for i in range(len(data_proc))]
-            else:
-                # In this case, data_and_labels is organized in a item-then-sample order:
-                # it is a tuple of items. Each element of the tuple is a tensor of
-                # [n_total_batch_size, ...].
-                data_list = []
-                for i in range(len(data)):
-                    data_list.append(
-                        self.move_to_device(data[i][self.rank * bsize_per_rank:(self.rank + 1) * bsize_per_rank])
-                    )
-                data = data_list
-        else:
-            if isinstance(data[0], tuple):
-                # In this case, data_and_labels is in sample-then-item order.
-                n_data = len(data[0])
-                data_list = [[] for i in range(n_data)]
-                for i_item in range(n_data):
-                    for i_sample in range(len(data)):
-                        data_list[i_item].append(data[i_sample][i_item])
-                data = [self.move_to_device(torch.concat(data_list[i])) for i in range(len(data_list))]
-            else:
-                # In this case, data_and_labels is in item-then-sample order.
-                data = [self.move_to_device(data[i]) for i in range(len(data))]
+    def process_data_loader_yield(self, data, **kwargs):
+        # All that the dataloader yield are supposed to be data. No label.
+        super().process_data_loader_yield(data, data_label_separation_index=None)
         return data
 
     def compute_losses(self, loss_records, preds, *args, **kwargs):
@@ -977,66 +977,20 @@ class Pretrainer(Trainer):
         loss_records[0] += total_loss_tensor.detach().item()
         return loss_records, total_loss_tensor
 
-    def run_training_epoch(self):
-        losses = self.get_epoch_loss_buffer()
-        n_batches = 0
-        for i, data in enumerate(tqdm(self.training_dataloader, disable=((not self.verbose) or (self.rank != 0)))):
-            # elements of data are supposed to be 2 different augmentations.
-            data = self.process_data_loader_yield(data)
-            preds = self.model(*data)
-            losses, total_loss_tensor = self.compute_losses(losses, preds)
+    def load_data_and_get_loss(self, data, loss_buffer):
+        # elements of data are supposed to be 2 different augmentations.
+        data = self.process_data_loader_yield(data)
+        preds = self.model(*data)
+        losses, total_loss_tensor = self.compute_losses(loss_buffer, preds)
+        return loss_buffer, total_loss_tensor, preds, None
 
-            # Zero current grads and do backprop
-            self.optimizer.zero_grad()
-            self.run_backprop(total_loss_tensor)
-            self.optimizer.step()
-
-            # Update the LR according to the schedule -- CyclicLR updates each batch
-            self.scheduler.step()
-            self.loss_tracker['lrs'].append(self.scheduler.get_last_lr()[0])
-
-            n_batches += 1
-        losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
-        self.loss_tracker.update_losses(losses, type='loss', epoch=self.current_epoch)
-
-        self.save_model_and_states_checkpoint()
-
-        if self.configs.post_training_epoch_hook is not None:
-            self.configs.post_training_epoch_hook()
-
-    def run_validation(self):
-        losses = self.get_epoch_loss_buffer()
-        n_batches = 0
-        for j, data in enumerate(self.validation_dataloader):
-            data = self.process_data_loader_yield(data)
-            preds = self.model(*data)
-            losses, _ = self.compute_losses(losses, preds)
-            n_batches += 1
-        if n_batches == 0:
-            logger.warning('Validation set might be too small that at least 1 rank did not get any validation data.')
-        n_batches = np.max([n_batches, 1])
-        last_best_val_loss = self.loss_tracker['best_val_loss']
-
-        losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
-        is_best = self.loss_tracker.update_losses(losses, epoch=self.current_epoch, type='val_loss')
-        self.write_training_info()
-
-        # Update saved model if val loss is lower
-        if is_best:
-            logger.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
-                last_best_val_loss, self.loss_tracker['best_val_loss']))
-            self.update_saved_model(filename='best_model.pth')
-
-        if self.configs.post_validation_epoch_hook is not None:
-            self.configs.post_validation_epoch_hook()
-
-    def update_saved_model(self, filename='best_model.pth'):
+    def update_saved_model(self, filename='best_model.pth', **kwargs):
         """
         Updates saved model if validation loss is minimum.
         """
         if not self.gatekeeper.should_proceed(gate_kept=True):
             return
-        super().update_saved_model(filename)
+        super().update_saved_model(filename, save_configs=True, subcomponent=None)
         encoder_filename = os.path.splitext(filename)[0] + '_encoder.pth'
         super().update_saved_model(encoder_filename, save_configs=False, subcomponent='encoder')
 
@@ -1086,8 +1040,10 @@ class HuggingFaceAccelerateTrainer(Trainer):
         if self.configs.checkpoint_dir is not None:
             self.load_state_checkpoint()
 
-    def run_backprop(self, loss_node):
+    def run_model_update_step(self, loss_node):
+        self.optimizer.zero_grad()
         self.accelerator.backward(loss_node)
+        self.optimizer.step()
 
     def move_to_device(self, var):
         # HuggingFace Accelerate should not need manual data offloading.
@@ -1117,7 +1073,7 @@ class HuggingFaceAccelerateTrainer(Trainer):
         # Save model, optimizer, scheduler, and dataloader states.
         self.update_saved_model(filename='checkpoint_model')
 
-    def load_model(self):
+    def load_model(self, **kwargs):
         self.load_state_checkpoint()
 
     def load_state_checkpoint(self):
