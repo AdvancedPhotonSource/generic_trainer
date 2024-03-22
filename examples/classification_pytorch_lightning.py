@@ -31,7 +31,7 @@ if __name__ == '__main__':
         task_type='classification'
     )
 
-    trainer = HuggingFaceAccelerateTrainer(configs)
+    trainer = PyTorchLightningTrainer(configs)
     trainer.build()
     trainer.run_training()
 

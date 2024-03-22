@@ -581,7 +581,7 @@ class Trainer:
             n = self.loss_tracker.n_preds + 1
         return [0.0] * n
 
-    def load_data_and_get_loss(self, data_and_labels, loss_buffer):
+    def load_data_and_get_loss(self, data_and_labels, loss_buffer, *args, **kwargs):
         """
         Load data, run prediction, calculate loss, and return the tracked loss values,
         the gradient-tracked loss tensor, and predictions and labels. Override this method
@@ -691,6 +691,7 @@ class Trainer:
                                                            cycle_momentum=False, mode='triangular2')
 
     def build_model(self):
+        self.model_class_handle = self.configs.model_class
         self.model = self.configs.model_class(**self.configs.model_params.__dict__)
 
         # For single_node parallelization using DataParallel model, checkpoint should be loaded before
@@ -1068,7 +1069,7 @@ class HuggingFaceAccelerateTrainer(Trainer):
         return var
 
     def update_saved_model(self, filename='best_model', save_configs=True, subcomponent=None, **kwargs):
-        """
+        """self.configs.model_class
         Save model checkpoint.
         HuggingFace Accelerate takes a directory to save the model. This directory will be named as
         basename(splitext(filename)[0]).
@@ -1153,3 +1154,94 @@ class HuggingFaceAcceleratePretrainer(HuggingFaceAccelerateTrainer, Pretrainer):
 
     def load_model(self, **kwargs):
         Pretrainer.load_model(self, **kwargs)
+
+
+class PyTorchLightningTrainer(Trainer):
+
+    def __init__(self, *args, **kwargs):
+        import lightning
+        self.llib = lightning
+
+        super().__init__(*args, **kwargs)
+        self.lightning_model = None
+
+    def build(self):
+        self.build_split_datasets()
+        self.build_dataloaders()
+        self.build_model()
+        self.build_dir()
+        self.build_lightning_model()
+
+    def add_lightning_methods_to_model_class(self):
+        assert self.model_class_handle is not None
+        setattr(self.model_class_handle, 'training_step', self.load_data_and_get_loss)
+        setattr(self.model_class_handle, 'configure_optimizers', self.build_optimizer)
+
+    def build_model(self):
+        self.model_class_handle = self.configs.model_class
+
+    def build_lightning_model(self):
+        llib = self.llib
+        model_class_handle = self.model_class_handle
+
+        class LightningModel(llib.LightningModule, model_class_handle):
+            def __init__(self, *args, **kwargs):
+                llib.LightningModule.__init__(self)
+                model_class_handle.__init__(self, *args, **kwargs)
+                self.gtrainer = None
+
+            def training_step(self, batch, batch_idx):
+                return PyTorchLightningTrainer.load_data_and_get_loss(self, batch, batch_idx)
+
+            def configure_optimizers(self):
+                return PyTorchLightningTrainer.build_optimizer(self)
+
+        self.lightning_model = LightningModel(**self.configs.model_params.__dict__)
+        self.lightning_model.gtrainer = self
+
+    def run_training(self):
+        if self.configs.checkpoint_dir is None:
+            checkpoint_path = None
+        else:
+            checkpoint_path = os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth')
+
+        lightning_trainer = self.llib.Trainer(
+            max_epochs=self.configs.num_epochs
+        )
+        lightning_trainer.fit(self.lightning_model,
+                              train_dataloaders=self.training_dataloader,
+                              val_dataloaders=self.validation_dataloader,
+                              ckpt_path=checkpoint_path
+        )
+
+    @staticmethod
+    def load_data_and_get_loss(lightning_model, batch, batch_idx, *args, **kwargs):
+        """
+        Load data, run prediction, calculate loss, and return the loss.
+
+        This defines the training_step method for PyTorch Lightning.
+        """
+        assert isinstance(lightning_model.gtrainer, Trainer)
+        if hasattr(lightning_model.gtrainer.loss_criterion, '__len__'):
+            n_losses = len(lightning_model.gtrainer.loss_criterion) + 1
+        else:
+            n_losses = len(lightning_model.gtrainer.configs.pred_names) + 1
+        data, labels = lightning_model.gtrainer.process_data_loader_yield(batch)
+        preds = lightning_model(*data)
+        _, total_loss_tensor = lightning_model.gtrainer.compute_losses([0.0] * n_losses, preds, labels)
+        return total_loss_tensor
+
+    @staticmethod
+    def build_optimizer(lightning_model):
+        assert isinstance(lightning_model.gtrainer, Trainer)
+        if isinstance(lightning_model.gtrainer.configs.optimizer, str):
+            if lightning_model.gtrainer.configs.optimizer == 'adam':
+                lightning_model.gtrainer.optimizer = torch.optim.Adam(lightning_model.parameters(),
+                                                                      lr=lightning_model.gtrainer.learning_rate)
+        else:
+            lightning_model.gtrainer.optimizer = lightning_model.gtrainer.configs.optimizer(
+                lightning_model.parameters(),
+                lr=lightning_model.gtrainer.learning_rate,
+                **lightning_model.gtrainer.configs.optimizer_params
+            )
+        return lightning_model.gtrainer.optimizer
