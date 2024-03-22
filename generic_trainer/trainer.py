@@ -1092,9 +1092,15 @@ class HuggingFaceAccelerateTrainer(Trainer):
         self.update_saved_model(filename='checkpoint_model')
 
     def load_model(self, path=None, state_dict=None, subcomponent=None):
-        # This would also load optimizer, scheduler and dataloader states.
-        # TODO: find a way to load only the encoder.
-        self.accelerator.load_state(path)
+        if len(os.path.splitext(path)[1]) == '':
+            logging.warning('The provided mode path {} does not have an extension so I am assuming it is the '
+                            'HuggingFace checkpoint format. The states of all other components like optimizer, '
+                            'scheduler etc. will also be loaded.'.format(path))
+            self.accelerator.load_state(path)
+        else:
+            logging.warning('The provided mode path {} is assumed to be a native PyTorch checkpoint. Loading it '
+                            'with the native load_model method.'.format(path))
+            Pretrainer.load_model(self, path=path, state_dict=state_dict, subcomponent=subcomponent)
 
     def load_state_checkpoint(self):
         if self.configs.checkpoint_dir is None:
