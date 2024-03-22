@@ -713,8 +713,12 @@ class Trainer:
         # DistributedDataParallel(model).
         if self.parallelization_type == 'multi_node':
             if self.configs.pretrained_model_path is not None:
-                logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
-                self.load_model(self.configs.pretrained_model_path)
+                if self.configs.load_pretrained_encoder_only:
+                    logger.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
+                    self.load_model(self.configs.pretrained_model_path, subcomponent='backbone_model')
+                else:
+                    logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
+                    self.load_model(self.configs.pretrained_model_path)
             elif self.configs.checkpoint_dir is not None:
                 logger.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
                 self.load_model(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth'))
