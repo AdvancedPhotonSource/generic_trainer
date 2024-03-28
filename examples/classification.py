@@ -6,6 +6,7 @@ import torch.nn as nn
 
 from generic_trainer.trainer import Trainer
 from generic_trainer.configs import *
+import generic_trainer.message_logger
 
 from dataset_handle import DummyClassificationDataset
 

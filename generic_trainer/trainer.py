@@ -25,7 +25,6 @@ import matplotlib
 from .configs import *
 from .util import *
 from .compat import *
-from .message_logger import logger
 
 
 class MultirankGateKeeper:
@@ -142,15 +141,15 @@ class LossTracker(dict):
         return names
 
     def print_losses(self):
-        logger.info('Epoch: %d | All | Train Loss: %.5f | Val Loss: %.5f' % (
+        logging.info('Epoch: %d | All | Train Loss: %.5f | Val Loss: %.5f' % (
             self.current_epoch, self['loss'][-1], self['val_loss'][-1]))
         for i_pred, pred_name in enumerate(self.pred_names):
-            logger.info('Epoch: %d | %s  | Train Loss: %.4f | Val Loss: %.4f' % (
+            logging.info('Epoch: %d | %s  | Train Loss: %.4f | Val Loss: %.4f' % (
                 self.current_epoch, pred_name.upper(),
                 self['loss_{}'.format(pred_name)][-1],
                 self['val_loss_{}'.format(pred_name)][-1]))
         if len(self['lrs']) > 0:
-            logger.info('Epoch: %d | Ending LR: %.6f ' % (self.current_epoch, self['lrs'][-1]))
+            logging.info('Epoch: %d | Ending LR: %.6f ' % (self.current_epoch, self['lrs'][-1]))
 
     def plot(self, quantities=('loss', 'val_loss'), save_path=None):
         plt.figure()
@@ -333,6 +332,7 @@ class Trainer:
     def get_device(self):
         if self.configs.cpu_only:
             return torch.device('cpu')
+        # Don't specify GPU index here (i.e., no "cuda:X").
         return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def get_worker_seed_func(self):
@@ -641,7 +641,7 @@ class Trainer:
                 self.loss_tracker.update_classification_results_and_labels(preds, labels)
             n_batches += 1
         if n_batches == 0:
-            logger.warning('Validation set might be too small that at least 1 rank did not get any validation data.')
+            logging.warning('Validation set might be too small that at least 1 rank did not get any validation data.')
         n_batches = np.max([n_batches, 1])
         last_best_val_loss = self.loss_tracker['best_val_loss']
 
@@ -651,7 +651,7 @@ class Trainer:
 
         # Update saved model if val loss is lower
         if is_best:
-            logger.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
+            logging.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
             self.update_saved_model(filename='best_model.pth')
 
@@ -699,13 +699,13 @@ class Trainer:
         if self.parallelization_type == 'single_node':
             if self.configs.pretrained_model_path is not None:
                 if self.configs.load_pretrained_encoder_only:
-                    logger.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
+                    logging.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path, subcomponent='backbone_model')
                 else:
-                    logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
+                    logging.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path)
             elif self.configs.checkpoint_dir is not None:
-                logger.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
+                logging.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
                 self.load_model(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth'))
 
         self.build_parallelism()
@@ -715,28 +715,28 @@ class Trainer:
         if self.parallelization_type == 'multi_node':
             if self.configs.pretrained_model_path is not None:
                 if self.configs.load_pretrained_encoder_only:
-                    logger.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
+                    logging.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path, subcomponent='backbone_model')
                 else:
-                    logger.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
+                    logging.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path)
             elif self.configs.checkpoint_dir is not None:
-                logger.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
+                logging.info('Loading checkpointed model from {}.'.format(self.configs.checkpoint_dir))
                 self.load_model(os.path.join(self.configs.checkpoint_dir, 'checkpoint_model.pth'))
 
     def build_parallelism(self):
         if self.parallelization_type == 'single_node':
             if self.device.type == 'cuda' and self.num_local_devices > 1:
                 self.model = nn.DataParallel(self.model)
-                logger.info('Using DataParallel with {} devices.'.format(self.num_local_devices))
+                logging.info('Using DataParallel with {} devices.'.format(self.num_local_devices))
             self.model.to(self.device)
 
         elif self.parallelization_type == 'multi_node':
             if self.device.type == 'cuda' and len(get_cuda_visible_devices_from_environ()) != 1:
-                logger.warning('Parallelization type is multi_node, but CUDA_VISIBLE_DEVICES is {}. This variable '
+                logging.warning('Parallelization type is multi_node, but CUDA_VISIBLE_DEVICES is {}. This variable '
                                'should be set to exactly 1 GPU for each process before MPI initialization.'.
                                format(os.environ['CUDA_VISIBLE_DEVICES']))
-            logger.info('Sending model on rank {} to device {}.'.format(self.rank, self.rank))
+            logging.info('Sending model on rank {} to device {}.'.format(self.rank, self.rank))
             if not self.configs.cpu_only:
                 self.model.to(self.device)
             try:
@@ -825,7 +825,7 @@ class Trainer:
             return
         checkpoint_fname = os.path.join(self.configs.checkpoint_dir, 'checkpoint.state')
         if not os.path.exists(checkpoint_fname):
-            logger.warning('Checkpoint not found in {}.'.format(checkpoint_fname))
+            logging.warning('Checkpoint not found in {}.'.format(checkpoint_fname))
         state_dict = torch.load(checkpoint_fname)
         self.current_epoch = state_dict['current_epoch']
         self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
@@ -1112,7 +1112,7 @@ class HuggingFaceAccelerateTrainer(Trainer):
         # Also load epoch counter and loss tracker.
         checkpoint_fname = os.path.join(self.configs.checkpoint_dir, 'checkpoint.state')
         if not os.path.exists(checkpoint_fname):
-            logger.warning('Checkpoint not found in {}.'.format(checkpoint_fname))
+            logging.warning('Checkpoint not found in {}.'.format(checkpoint_fname))
         state_dict = torch.load(checkpoint_fname)
         self.current_epoch = state_dict['current_epoch']
         self.loss_tracker = state_dict['loss_tracker']

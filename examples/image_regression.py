@@ -7,6 +7,7 @@ import torch.nn as nn
 from generic_trainer.trainer import Trainer
 from generic_trainer.configs import *
 from generic_trainer.metrics import *
+import generic_trainer.message_logger
 
 from dataset_handle import DummyImageDataset
 
