@@ -955,7 +955,7 @@ class Pretrainer(Trainer):
 
     def process_data_loader_yield(self, data, **kwargs):
         # All that the dataloader yield are supposed to be data. No label.
-        super().process_data_loader_yield(data, data_label_separation_index=None)
+        data = super().process_data_loader_yield(data, data_label_separation_index=None)
         return data
 
     def compute_losses(self, loss_records, preds, *args, **kwargs):
@@ -986,7 +986,7 @@ class Pretrainer(Trainer):
 
     def load_data_and_get_loss(self, data, loss_buffer):
         # elements of data are supposed to be 2 different augmentations.
-        data = self.process_data_loader_yield(data)
+        data, _ = self.process_data_loader_yield(data)
         preds = self.model(*data)
         losses, total_loss_tensor = self.compute_losses(loss_buffer, preds)
         return loss_buffer, total_loss_tensor, preds, None
