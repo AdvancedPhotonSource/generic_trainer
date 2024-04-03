@@ -249,7 +249,9 @@ class Trainer:
         self.model = None
         self.model_params = None
         self.model_class_handle = None
+        self.training_sampler = None
         self.training_dataloader = None
+        self.validation_sampler = None
         self.validation_dataloader = None
         self.num_local_devices = self.get_num_local_devices()
         self.num_processes = num_processes
@@ -412,21 +414,21 @@ class Trainer:
 
     def build_dataloaders(self):
         if self.parallelization_type == 'multi_node':
-            training_sampler = torch.utils.data.distributed.DistributedSampler(self.training_dataset,
+            self.training_sampler = torch.utils.data.distributed.DistributedSampler(self.training_dataset,
                                                                                num_replicas=self.num_processes,
                                                                                rank=self.rank,
                                                                                drop_last=True)
             self.training_dataloader = DataLoader(self.training_dataset,
                                                   batch_size=self.configs.batch_size_per_process,
-                                                  sampler=training_sampler,
+                                                  sampler=self.training_sampler,
                                                   collate_fn=lambda x: x)
-            validation_sampler = torch.utils.data.distributed.DistributedSampler(self.validation_dataset,
+            self.validation_sampler = torch.utils.data.distributed.DistributedSampler(self.validation_dataset,
                                                                                  num_replicas=self.num_processes,
                                                                                  rank=self.rank,
                                                                                  drop_last=True)
             self.validation_dataloader = DataLoader(self.validation_dataset,
                                                     batch_size=self.all_proc_batch_size,
-                                                    sampler=validation_sampler,
+                                                    sampler=self.validation_sampler,
                                                     collate_fn=lambda x: x)
         else:
             # ALCF documentation mentions that there is a bug in Pytorch's multithreaded data loaders with
@@ -445,6 +447,8 @@ class Trainer:
 
     def run_training(self):
         for self.current_epoch in range(self.current_epoch, self.num_epochs):
+            if self.configs.parallelization_params.parallelization_type == 'multi_node':
+                self.training_sampler.set_epoch(self.current_epoch)
             # Set model to train mode and run training
             self.model.train()
             self.run_training_epoch()
