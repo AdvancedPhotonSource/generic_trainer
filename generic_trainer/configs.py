@@ -1,10 +1,11 @@
 import collections
 import dataclasses
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 import json
 import os
 
 import torch
+from torch.utils.data import Dataset
 
 from generic_trainer.metrics import *
 
@@ -121,7 +122,7 @@ class Config(OptionContainer):
     model_params: ModelParameters = dataclasses.field(default_factory=ModelParameters)
     """Arguments of the model class."""
 
-    dataset: Any = None
+    dataset: Optional[Dataset] = None
     """The dataset object."""
 
     debug: bool = False
@@ -152,6 +153,16 @@ class InferenceConfig(Config):
 
 @dataclasses.dataclass
 class TrainingConfig(Config):
+    training_dataset: Optional[Dataset] = None
+    """
+    The training dataset. If this is None, then the whole dataset (including training and validation) must be
+    provided through the `dataset` parameter, and in that case the dataset will be split into training and
+    validation set according to `validation_ratio` in the trainer. 
+    """
+
+    validation_dataset: Optional[Dataset] = None
+    """The validation dataset. See the docstring of `training_dataset` for more details."""
+
     batch_size_per_process: int = 64
     """
     The batch size per process. With this value denoted by `n_bspp`, the trainer behaves as the following:

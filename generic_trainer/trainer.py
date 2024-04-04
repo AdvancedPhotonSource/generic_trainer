@@ -246,7 +246,6 @@ class Trainer:
         self.configs = configs
         self.parallelization_type = self.configs.parallelization_params.parallelization_type
         self.dataset = self.configs.dataset
-        assert isinstance(self.dataset, Dataset)
         self.training_dataset = None
         self.validation_dataset = None
         self.validation_ratio = self.configs.validation_ratio
@@ -670,9 +669,15 @@ class Trainer:
         self.optimizer.step()
 
     def build_split_datasets(self):
-        train_idx, val_idx = train_test_split(list(range(len(self.dataset))), test_size=self.validation_ratio)
-        self.training_dataset = Subset(self.dataset, train_idx)
-        self.validation_dataset = Subset(self.dataset, val_idx)
+        if self.configs.training_dataset is None or self.configs.validation_dataset is None:
+            logging.info("Splitting whole dataset into training and validation sets...")
+            train_idx, val_idx = train_test_split(list(range(len(self.dataset))), test_size=self.validation_ratio)
+            self.training_dataset = Subset(self.dataset, train_idx)
+            self.validation_dataset = Subset(self.dataset, val_idx)
+        else:
+            logging.info("Using separately provided training and validation datasets.")
+            self.training_dataset = self.configs.training_dataset
+            self.validation_dataset = self.configs.validation_dataset
 
     def build_optimizer(self):
         if self.configs.pretrained_model_path is not None and self.configs.load_pretrained_encoder_only:
