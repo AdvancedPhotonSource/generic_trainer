@@ -223,6 +223,10 @@ class LossTracker(dict):
             self['classification_labels_{}'.format(pred_name)] = (
                 comm.allreduce(self['classification_labels_{}'.format(pred_name)], op=MPI.SUM))
 
+    def dump(self, path):
+        f = open(path, 'w')
+        for key in self.keys():
+            f.write('{} = {}\n'.format(key, self[key]))
 
 
 class Trainer:
@@ -459,6 +463,7 @@ class Trainer:
 
             if self.verbose and self.rank == 0:
                 self.loss_tracker.print_losses()
+            self.write_training_info()
         self.update_saved_model(filename='final_model.pth')
 
     def compute_losses(self, loss_records, preds, labels):
@@ -644,7 +649,6 @@ class Trainer:
 
         losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
         is_best = self.loss_tracker.update_losses(losses, epoch=self.current_epoch, type='val_loss')
-        self.write_training_info()
 
         # Update saved model if val loss is lower
         if is_best:
@@ -833,9 +837,8 @@ class Trainer:
     def write_training_info(self):
         if not self.gatekeeper.should_proceed(gate_kept=True):
             return
-        f = open(os.path.join(self.configs.model_save_dir, 'training_info.txt'), 'w')
-        for key in self.loss_tracker:
-            f.write('{} = {}\n'.format(key, self.loss_tracker[key]))
+        fname = os.path.join(self.configs.model_save_dir, 'training_info.txt')
+        self.loss_tracker.dump(fname)
 
     def plot_training_history(self):
         self.plot_lr_history()
