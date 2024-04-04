@@ -675,11 +675,23 @@ class Trainer:
         self.validation_dataset = Subset(self.dataset, val_idx)
 
     def build_optimizer(self):
+        if self.configs.pretrained_model_path is not None and self.configs.load_pretrained_encoder_only:
+            try:
+                logging.info("Since a pretrained model path is provided and only the pretrained encoder is loaded, "
+                             "the pretrained encoder is considered as a pretrained backbone and will be frozen "
+                             "during this training.")
+                trainable_params = self.model.get_head_parameters()
+            except AttributeError:
+                raise AttributeError("Expecting the model object to have built-in method 'get_head_parameters' that "
+                                     "returns trainable parameters other than the backbone, but {} does not have "
+                                     "one.".format(self.model.__class__))
+        else:
+            trainable_params = self.model.parameters()
         if isinstance(self.configs.optimizer, str):
             if self.configs.optimizer == 'adam':
-                self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+                self.optimizer = torch.optim.Adam(trainable_params, lr=self.learning_rate)
         else:
-            self.optimizer = self.configs.optimizer(self.model.parameters(), lr=self.learning_rate,
+            self.optimizer = self.configs.optimizer(trainable_params, lr=self.learning_rate,
                                                     **self.configs.optimizer_params)
 
     def build_scheduler(self):
