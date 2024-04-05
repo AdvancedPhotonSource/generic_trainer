@@ -125,6 +125,9 @@ class Config(OptionContainer):
     dataset: Optional[Dataset] = None
     """The dataset object."""
 
+    pred_names: Any = ('cs', 'eg', 'sg')
+    """Names of the quantities predicted by the model."""
+
     debug: bool = False
 
     cpu_only: bool = False
@@ -144,15 +147,22 @@ class InferenceConfig(Config):
     # ===== PtychoNN configs =====
     batch_size: int = 1
 
-    model_path: str = None
-    """Path to a trained PtychoNN model."""
+    pretrained_model_path: str = None
+    """Path to a trained model."""
 
     prediction_output_path: str = None
-    """Path to save PtychoNN prediction results."""
+    """Path to save prediction results."""
+
+    load_pretrained_encoder_only: bool = False
+    """Keep this False for testing."""
+
+    batch_size_per_process: int = 64
+    """The batch size per process."""
 
 
 @dataclasses.dataclass
 class TrainingConfig(Config):
+
     training_dataset: Optional[Dataset] = None
     """
     The training dataset. If this is None, then the whole dataset (including training and validation) must be
@@ -217,9 +227,6 @@ class TrainingConfig(Config):
 
     load_pretrained_encoder_only: bool = False
     """If True, only the pretrained encoder (backbone) will be loaded if `pretrained_model_path` is not None."""
-
-    pred_names: Any = ('cs', 'eg', 'sg')
-    """Names of the quantities predicted by the model."""
 
     validation_ratio: float = 0.1
     """Ratio of data to be used as validation set."""

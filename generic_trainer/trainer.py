@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional, Any
+from typing import Optional, Any, Union
 import itertools
 import copy
 import re
@@ -231,7 +231,8 @@ class LossTracker(dict):
 
 class Trainer:
 
-    def __init__(self, configs: TrainingConfig, rank=None, num_processes=None, *args, **kwargs):
+    def __init__(self, configs: Union[TrainingConfig, Config], rank=None, num_processes=None, skip_init=False,
+                 *args, **kwargs):
         """
         Trainer constructor.
 
@@ -244,6 +245,8 @@ class Trainer:
                               None unless multi_node is intended and training is run using torch.multiprocessing.spawn.
         """
         self.configs = configs
+        if skip_init:
+            return
         self.parallelization_type = self.configs.parallelization_params.parallelization_type
         self.dataset = self.configs.dataset
         self.training_dataset = None
