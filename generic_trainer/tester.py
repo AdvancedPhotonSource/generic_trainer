@@ -17,6 +17,7 @@ class Tester(trainer.Trainer):
         self.dataset = None
         self.sampler = None
         self.dataloader = None
+        self.parallelization_type = self.configs.parallelization_params.parallelization_type
 
     def build(self):
         self.build_ranks()
@@ -35,7 +36,7 @@ class Tester(trainer.Trainer):
 
     def build_dataloaders(self):
         if self.parallelization_type == 'multi_node':
-            self.sampler = torch.utils.data.distributed.DistributedSampler(self.training_dataset,
+            self.sampler = torch.utils.data.distributed.DistributedSampler(self.dataset,
                                                                            num_replicas=self.num_processes,
                                                                            rank=self.rank,
                                                                            drop_last=False,
@@ -45,7 +46,7 @@ class Tester(trainer.Trainer):
                                          sampler=self.sampler,
                                          collate_fn=lambda x: x)
         else:
-            self.dataloader = DataLoader(self.training_dataset, shuffle=False,
+            self.dataloader = DataLoader(self.dataset, shuffle=False,
                                          batch_size=self.all_proc_batch_size,
                                          collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                          generator=self.get_dataloader_generator(), num_workers=0,
