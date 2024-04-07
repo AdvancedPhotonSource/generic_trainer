@@ -681,6 +681,9 @@ class Trainer:
             logging.info("Using separately provided training and validation datasets.")
             self.training_dataset = self.configs.training_dataset
             self.validation_dataset = self.configs.validation_dataset
+        logging.info('Training set size = {}; validation set size = {}.'.format(
+            len(self.training_dataset), len(self.validation_dataset))
+        )
 
     def build_optimizer(self):
         if self.configs.pretrained_model_path is not None and self.configs.load_pretrained_encoder_only:
@@ -703,9 +706,8 @@ class Trainer:
                                                     **self.configs.optimizer_params)
 
     def build_scheduler(self):
-        self.iterations_per_epoch = (len(self.training_dataset) - len(self.validation_dataset))
-        self.iterations_per_epoch = self.iterations_per_epoch / self.all_proc_batch_size
-        self.iterations_per_epoch = np.floor(self.iterations_per_epoch) + 1
+        self.iterations_per_epoch = len(self.training_dataset) / self.all_proc_batch_size
+        self.iterations_per_epoch = np.ceil(self.iterations_per_epoch)
         step_size = 6 * self.iterations_per_epoch
         self.scheduler = torch.optim.lr_scheduler.CyclicLR(self.optimizer, base_lr=self.learning_rate / 10,
                                                            max_lr=self.learning_rate, step_size_up=step_size,
