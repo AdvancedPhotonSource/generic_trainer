@@ -671,6 +671,12 @@ class Trainer:
         loss_node.backward()
         self.optimizer.step()
 
+    def get_model_object(self):
+        if isinstance(self.model, (nn.parallel.DistributedDataParallel, nn.DataParallel)):
+            return self.model.module
+        else:
+            return self.model
+
     def build_split_datasets(self):
         if self.configs.training_dataset is None or self.configs.validation_dataset is None:
             logging.info("Splitting whole dataset into training and validation sets...")
@@ -691,7 +697,7 @@ class Trainer:
                 logging.info("Since a pretrained model path is provided and only the pretrained encoder is loaded, "
                              "the pretrained encoder is considered as a pretrained backbone and will be frozen "
                              "during this training.")
-                trainable_params = self.model.get_head_parameters()
+                trainable_params = self.get_model_object().get_head_parameters()
             except AttributeError:
                 raise AttributeError("Expecting the model object to have built-in method 'get_head_parameters' that "
                                      "returns trainable parameters other than the backbone, but {} does not have "
