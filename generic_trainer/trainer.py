@@ -25,6 +25,7 @@ import matplotlib
 from .configs import *
 from .util import *
 from .compat import *
+from .data import *
 
 
 class MultirankGateKeeper:
@@ -420,22 +421,30 @@ class Trainer:
 
     def build_dataloaders(self):
         if self.parallelization_type == 'multi_node':
-            self.training_sampler = torch.utils.data.distributed.DistributedSampler(self.training_dataset,
-                                                                               num_replicas=self.num_processes,
-                                                                               rank=self.rank,
-                                                                               drop_last=True)
-            self.training_dataloader = DataLoader(self.training_dataset,
-                                                  batch_size=self.configs.batch_size_per_process,
-                                                  sampler=self.training_sampler,
-                                                  collate_fn=lambda x: x)
-            self.validation_sampler = torch.utils.data.distributed.DistributedSampler(self.validation_dataset,
-                                                                                 num_replicas=self.num_processes,
-                                                                                 rank=self.rank,
-                                                                                 drop_last=True)
-            self.validation_dataloader = DataLoader(self.validation_dataset,
-                                                    batch_size=self.all_proc_batch_size,
-                                                    sampler=self.validation_sampler,
-                                                    collate_fn=lambda x: x)
+            self.training_sampler = torch.utils.data.distributed.DistributedSampler(
+                self.training_dataset,
+                num_replicas=self.num_processes,
+                rank=self.rank,
+                drop_last=True
+            )
+            self.training_dataloader = DistributedDataLoader(
+                self.training_dataset,
+                batch_size=self.configs.batch_size_per_process,
+                sampler=self.training_sampler,
+                collate_fn=lambda x: x
+            )
+            self.validation_sampler = torch.utils.data.distributed.DistributedSampler(
+                self.validation_dataset,
+                num_replicas=self.num_processes,
+                rank=self.rank,
+                drop_last=True
+            )
+            self.validation_dataloader = DistributedDataLoader(
+                self.validation_dataset,
+                batch_size=self.configs.batch_size_per_process,
+                sampler=self.validation_sampler,
+                collate_fn=lambda x: x
+            )
         else:
             # ALCF documentation mentions that there is a bug in Pytorch's multithreaded data loaders with
             # distributed training across multiple nodes. Therefore, `num_workers` is set to 0. See also:
