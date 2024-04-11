@@ -742,6 +742,7 @@ class Trainer:
                                        HuggingFaceAcceleratePretrainer,
                                        PyTorchLightningTrainer]):
             self.use_torch_amp = True
+            logging.info('Using PyTorch AMP and gradient scaler.')
         self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_torch_amp)
 
     def build_model(self):
