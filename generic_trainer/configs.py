@@ -249,6 +249,9 @@ class TrainingConfig(Config):
     loss_tracker_params: LossTrackerParameters = dataclasses.field(default_factory=LossTrackerParameters)
     """Arguments of the loss tracker."""
 
+    automatic_mixed_precision: bool = False
+    """Automatic mixed precision and gradient scaling are enabled if True."""
+
 
 @dataclasses.dataclass
 class PretrainingConfig(TrainingConfig):
