@@ -1,6 +1,6 @@
 import collections
 import dataclasses
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 import json
 import os
 
@@ -237,7 +237,7 @@ class TrainingConfig(Config):
     post_validation_epoch_hook: Any = None
     """A Callable that can be called after each validation epoch."""
 
-    loss_function: Any = torch.nn.CrossEntropyLoss()
+    loss_function: Union[Callable, list[Callable, ...]] = torch.nn.CrossEntropyLoss()
     """
     The loss function. This could be either a Callable (like torch.nn.L1Loss) or a list of Callables.
     When it is a list, its length should be at least `len(pred_names)` and the Callables are respectively applied
