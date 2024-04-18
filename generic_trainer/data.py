@@ -63,6 +63,8 @@ class DistributedDataLoaderIterator:
         self.i_sample += self.batch_size
         self.i_batch += 1
         try:
+            raise AttributeError('__getitems__ suffers from a performance bottleneck (reason unclear) on some HPCs. '
+                                 'Until a fix is found, calling __getitems__ should be avoided.')
             data = self.dataset.__getitems__(inds)
         except AttributeError:
             raw_data = [self.dataset[i] for i in inds]
