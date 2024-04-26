@@ -9,7 +9,7 @@ from contextlib import ExitStack
 
 try:
     from mpi4py import MPI
-except:
+except ImportError:
     MPI = None
     warnings.warn('Since mpi4py is not installed, some multi-node features might be not available.')
 
@@ -479,7 +479,7 @@ class Trainer:
             if self.verbose and self.rank == 0:
                 self.loss_tracker.print_losses()
             self.write_training_info()
-        self.update_saved_model(filename='final_model.pth')
+        self.update_saved_model(filename='final_model.pth', save_onnx=self.configs.save_onnx)
 
     def compute_losses(self, loss_records, preds, labels):
         """
@@ -674,7 +674,7 @@ class Trainer:
         if is_best:
             logging.info("Saving improved model after Val Loss improved from %.5f to %.5f" % (
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
-            self.update_saved_model(filename='best_model.pth')
+            self.update_saved_model(filename='best_model.pth', save_onnx=self.configs.save_onnx)
 
         if self.configs.task_type == 'classification':
             self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
@@ -836,7 +836,7 @@ class Trainer:
             m = getattr(m, subcomponent)
         torch.save(m.state_dict(), path)
 
-    def update_saved_model(self, filename='best_model.pth', save_configs=True, subcomponent=None,
+    def update_saved_model(self, filename='best_model.pth', save_configs=True, save_onnx=True, subcomponent=None,
                            run_with_only_rank_0=True):
         """
         Updates saved model if validation loss is minimum.
@@ -857,9 +857,22 @@ class Trainer:
                             'using the updated_saved_model method defined in the base class in a subclass using '
                             'high-level wrappers like HuggingFace Accelerate. For now, you can ignore this warning.'.
                             format(e))
+        # Save PyTorch model state dict
         self.save_model(dest_path, subcomponent=subcomponent)
         if save_configs:
             self.configs.dump_to_json(os.path.join(path, 'configs.json'))
+        if save_onnx:
+            self.save_onnx_model(os.path.splitext(dest_path)[0] + '.onnx')
+
+    def save_onnx_model(self, path):
+        if isinstance(self.model, (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)):
+            m = self.model.module
+        else:
+            m = self.model
+        sample_data, _ = self.process_data_loader_yield(self.training_dataset[0])
+        rand_inputs = tuple([torch.randn(self.configs.batch_size_per_process, *d.shape[1:], device=self.device)
+                             for d in sample_data])
+        torch.onnx.export(m, rand_inputs, f=path)
 
     def generate_state_dict(self):
         """
@@ -878,7 +891,7 @@ class Trainer:
             return
         state_dict = self.generate_state_dict()
         torch.save(state_dict, os.path.join(self.configs.model_save_dir, 'checkpoint.state'))
-        self.update_saved_model('checkpoint_model.pth')
+        self.update_saved_model('checkpoint_model.pth', save_onnx=False)
 
     def load_state_checkpoint(self):
         if self.configs.checkpoint_dir is None:
@@ -1063,7 +1076,7 @@ class Pretrainer(Trainer):
         """
         if not self.gatekeeper.should_proceed(gate_kept=True):
             return
-        super().update_saved_model(filename, save_configs=True, subcomponent=None)
+        super().update_saved_model(filename, save_configs=True, subcomponent=None, save_onnx=kwargs['save_onnx'])
         encoder_filename = os.path.splitext(filename)[0] + '_encoder.pth'
         super().update_saved_model(encoder_filename, save_configs=False, subcomponent='encoder')
 
@@ -1127,7 +1140,8 @@ class HuggingFaceAccelerateTrainer(Trainer):
         # HuggingFace Accelerate should not need manual data offloading.
         return var
 
-    def update_saved_model(self, filename='best_model', save_configs=True, subcomponent=None, **kwargs):
+    def update_saved_model(self, filename='best_model', save_configs=True, save_onnx=True,
+                           subcomponent=None, **kwargs):
         """self.configs.model_class
         Save model checkpoint.
         HuggingFace Accelerate takes a directory to save the model. This directory will be named as
@@ -1136,12 +1150,15 @@ class HuggingFaceAccelerateTrainer(Trainer):
         :param filename: str. Name of the checkpoint directory. If it comes with an extension, the extension will
                          be removed.
         :param save_configs: bool. If True, trainer configs will also be saved as a JSON.
+        :param save_onnx: bool. If True, ONNX models are also saved.
         :param subcomponent: str. If not None, only the subcomponent of the model with this name will be saved.
         """
         path = os.path.join(self.configs.model_save_dir, os.path.splitext(filename)[0])
         self.accelerator.save_state(path)
         if save_configs and self.gatekeeper.should_proceed(gate_kept=True):
             self.configs.dump_to_json(os.path.join(self.configs.model_save_dir, 'configs.json'))
+        if save_onnx:
+            self.save_onnx_model(self.save_onnx_model(os.path.splitext(path)[0] + '.onnx'))
 
     def save_model_and_states_checkpoint(self):
         # Save epoch counter and loss tracker.
