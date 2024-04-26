@@ -836,7 +836,7 @@ class Trainer:
             m = getattr(m, subcomponent)
         torch.save(m.state_dict(), path)
 
-    def update_saved_model(self, filename='best_model.pth', save_configs=True, save_onnx=True, subcomponent=None,
+    def update_saved_model(self, filename='best_model.pth', save_configs=True, save_onnx=False, subcomponent=None,
                            run_with_only_rank_0=True):
         """
         Updates saved model if validation loss is minimum.

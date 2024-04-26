@@ -252,7 +252,7 @@ class TrainingConfig(Config):
     automatic_mixed_precision: bool = False
     """Automatic mixed precision and gradient scaling are enabled if True."""
 
-    save_onnx: bool = True
+    save_onnx: bool = False
     """If True, ONNX models are saved along with state dicts."""
 
 
