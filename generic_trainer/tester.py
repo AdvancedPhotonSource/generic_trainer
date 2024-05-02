@@ -4,6 +4,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+import tqdm
 
 import generic_trainer.trainer as trainer
 from generic_trainer.configs import *
@@ -94,7 +95,7 @@ class Tester(trainer.Trainer):
     def run(self):
         if self.mode == 'state_dict':
             self.model.eval()
-        for j, data_and_labels in enumerate(self.dataloader):
+        for j, data_and_labels in enumerate(tqdm.tqdm(self.dataloader)):
             data, labels = self.process_data_loader_yield(data_and_labels)
             if self.mode == 'state_dict':
                 preds = self.model(*data)
