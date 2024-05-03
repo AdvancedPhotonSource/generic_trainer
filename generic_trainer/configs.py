@@ -159,6 +159,12 @@ class InferenceConfig(Config):
     batch_size_per_process: int = 64
     """The batch size per process."""
 
+    prediction_postprocessor: Optional[Callable] = None
+    """
+    Postprocessing function to run after prediction. Should take a tuple of predicted tensors as input and return 
+    processed variables.
+    """
+
 
 @dataclasses.dataclass
 class TrainingConfig(Config):

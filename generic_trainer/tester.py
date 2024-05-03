@@ -11,6 +11,16 @@ from generic_trainer.configs import *
 from generic_trainer.inference_util import *
 
 
+class PredictionPostprocessors:
+
+    @staticmethod
+    def add_softmax(preds):
+        new_preds = []
+        for p in preds:
+            new_preds.append(p.softmax(dim=-1))
+        return tuple(new_preds)
+
+
 class Tester(trainer.Trainer):
 
     def __init__(self, configs: InferenceConfig):
@@ -23,6 +33,7 @@ class Tester(trainer.Trainer):
         self.dataloader = None
         self.parallelization_type = self.configs.parallelization_params.parallelization_type
         self.mode = 'state_dict'
+        self.post_prediction_hook_func = lambda: None
 
         # Attributes below are used for ONNX
         self.onnx_mdl = None
@@ -101,6 +112,8 @@ class Tester(trainer.Trainer):
                 preds = self.model(*data)
             else:
                 preds = self.run_onnx_inference(*data)
+            if self.configs.prediction_postprocessor is not None:
+                preds = self.configs.prediction_postprocessor(preds)
             self.update_result_holders(preds, labels)
 
     def run_onnx_inference(self, data):
