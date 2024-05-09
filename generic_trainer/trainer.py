@@ -97,10 +97,10 @@ class LossTracker(dict):
         """
         self[type].append(losses[0])
 
-        if epoch is not None:
+        if epoch is None:
+            raise ValueError('Epoch must be provided.')
+        if len(self['epochs']) == 0 or epoch != self['epochs'][-1]:
             self['epochs'].append(epoch)
-        else:
-            self['epochs'].append(len(self[type]) - 1)
         self.current_epoch = self['epochs'][-1]
 
         if lr is not None:
