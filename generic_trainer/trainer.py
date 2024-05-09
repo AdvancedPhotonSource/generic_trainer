@@ -479,6 +479,7 @@ class Trainer:
             if self.verbose and self.rank == 0:
                 self.loss_tracker.print_losses()
             self.write_training_info()
+            self.save_model_and_states_checkpoint()
         self.update_saved_model(filename='final_model.pth', save_onnx=self.configs.save_onnx)
 
     def compute_losses(self, loss_records, preds, labels):
@@ -646,8 +647,6 @@ class Trainer:
             self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_accuracy_history(acc_dict, 'train')
-
-        self.save_model_and_states_checkpoint()
 
         if self.configs.post_training_epoch_hook is not None:
             self.configs.post_training_epoch_hook()

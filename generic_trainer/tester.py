@@ -33,7 +33,6 @@ class Tester(trainer.Trainer):
         self.dataloader = None
         self.parallelization_type = self.configs.parallelization_params.parallelization_type
         self.mode = 'state_dict'
-        self.post_prediction_hook_func = lambda: None
 
         # Attributes below are used for ONNX
         self.onnx_mdl = None
