@@ -230,6 +230,17 @@ class LossTracker(dict):
         for key in self.keys():
             f.write('{} = {}\n'.format(key, self[key]))
 
+    def load(self, path):
+        f = open(path, 'r')
+        for line in f.readlines():
+            key, val = line.split(' = ')
+            key = key.strip()
+            val = val.strip()
+            if '[' in val:
+                val = [float(re.findall('\d+(?:\.\d+)?', x)[0]) for x in val.split(',')]
+            self[key] = np.array(val)
+
+
 
 class Trainer:
 
