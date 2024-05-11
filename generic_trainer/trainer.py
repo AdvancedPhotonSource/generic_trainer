@@ -466,7 +466,7 @@ class Trainer:
                 sampler=self.validation_sampler,
                 collate_fn=lambda x: x
             )
-            if self.configs.test_dataset is not None:
+            if self.test_dataset is not None:
                 self.test_sampler = torch.utils.data.distributed.DistributedSampler(
                     self.test_dataset,
                     num_replicas=self.num_processes,
@@ -493,11 +493,12 @@ class Trainer:
                                                     collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                     generator=self.get_dataloader_generator(), num_workers=0,
                                                     drop_last=False)
-            self.test_dataloader = DataLoader(self.test_dataset, shuffle=True,
-                                              batch_size=self.all_proc_batch_size,
-                                              collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
-                                              generator=self.get_dataloader_generator(), num_workers=0,
-                                              drop_last=False)
+            if self.test_dataset is not None:
+                self.test_dataloader = DataLoader(self.test_dataset, shuffle=True,
+                                                  batch_size=self.all_proc_batch_size,
+                                                  collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
+                                                  generator=self.get_dataloader_generator(), num_workers=0,
+                                                  drop_last=False)
 
     def run_training(self):
         for self.current_epoch in range(self.current_epoch, self.num_epochs):
@@ -743,8 +744,8 @@ class Trainer:
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_accuracy_history(acc_dict, 'test')
 
-        if self.configs.post_validation_epoch_hook is not None:
-            self.configs.post_validation_epoch_hook()
+        if self.configs.post_test_epoch_hook is not None:
+            self.configs.post_test_epoch_hook()
 
     def run_model_update_step(self, loss_node):
         self.optimizer.zero_grad()

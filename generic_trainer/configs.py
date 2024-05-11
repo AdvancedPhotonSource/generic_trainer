@@ -248,6 +248,9 @@ class TrainingConfig(Config):
     post_validation_epoch_hook: Any = None
     """A Callable that can be called after each validation epoch."""
 
+    post_test_epoch_hook: Any = None
+    """A Callable that can be called after each test epoch."""
+
     loss_function: Union[Callable, list[Callable, ...]] = torch.nn.CrossEntropyLoss()
     """
     The loss function. This could be either a Callable (like torch.nn.L1Loss) or a list of Callables.
