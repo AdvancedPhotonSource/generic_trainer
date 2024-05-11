@@ -179,6 +179,11 @@ class TrainingConfig(Config):
     validation_dataset: Optional[Dataset] = None
     """The validation dataset. See the docstring of `training_dataset` for more details."""
 
+    test_dataset: Optional[Dataset] = None
+    """
+    The test dataset. It has no influence on training, just providing a way to check test performance after each epoch.
+    """
+
     batch_size_per_process: int = 64
     """
     The batch size per process. With this value denoted by `n_bspp`, the trainer behaves as the following:
