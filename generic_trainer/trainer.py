@@ -98,6 +98,8 @@ class LossTracker(dict):
         :return: bool. If type is "val_loss" and the given validation loss is lower than the current best validation
                        loss, return True.
         """
+        if type not in self.keys():
+            self[type] = []
         self[type].append(losses[0])
 
         if epoch is None:
@@ -110,6 +112,8 @@ class LossTracker(dict):
             self['lrs'].append(lr)
 
         for i, pred_name in enumerate(self.pred_names):
+            if '{}_{}'.format(type, pred_name) not in self.keys():
+                self['{}_{}'.format(type, pred_name)] = []
             self['{}_{}'.format(type, pred_name)].append(losses[i + 1])
         if type == 'val_loss' and losses[0] < self['best_val_loss']:
             self['best_val_loss'] = losses[0]
@@ -211,6 +215,8 @@ class LossTracker(dict):
         :param type: str. Can be 'train' or 'val'.
         """
         for i, pred_name in enumerate(self.pred_names):
+            if '{}_acc_{}'.format(type, pred_name) not in self.keys():
+                self['{}_acc_{}'.format(type, pred_name)] = []
             self['{}_acc_{}'.format(type, pred_name)].append(acc_dict[pred_name])
 
     def sync_classification_preds_and_labels_across_ranks(self):
