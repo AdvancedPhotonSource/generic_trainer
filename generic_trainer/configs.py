@@ -240,6 +240,7 @@ class InferenceConfig(Config):
     def string_to_object(self, key, value):
         if key == 'model_save_dir':
             self.pretrained_model_path = os.path.join(value, 'best_model.pth')
+        return value
 
 
 @dataclasses.dataclass
