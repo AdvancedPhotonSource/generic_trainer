@@ -38,7 +38,9 @@ class OptionContainer:
             v = self.__dict__[key]
             if not self.__class__.is_jsonable(v):
                 if isinstance(v, (tuple, list)):
-                    v = '_'.join([str(x) for x in v])
+                    v = [str(x) for x in v]
+                elif isinstance(v, OptionContainer):
+                    v = v.get_serializable_dict()
                 else:
                     v = str(v)
             d[key] = v
@@ -48,7 +50,7 @@ class OptionContainer:
         try:
             f = open(filename, 'w')
             d = self.get_serializable_dict()
-            json.dump(d, f)
+            json.dump(d, f, indent=4, separators=(',', ': '))
             f.close()
         except:
             print('Failed to dump json.')
@@ -62,6 +64,23 @@ class OptionContainer:
         for key in d.keys():
             self.__dict__[key] = d[key]
         f.close()
+
+    def string_to_object(self, key, value):
+        """
+        Create an object based on the string value of a config key.
+        :param key: str.
+        :param value: str.
+        :return: object.
+        """
+        pass
+
+    def object_to_string(self, key):
+        """
+        Convert an object in a config key to string.
+        :param key: str.
+        :return: str.
+        """
+        pass
 
 
 # =============================
