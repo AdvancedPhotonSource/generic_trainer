@@ -86,6 +86,8 @@ class OptionContainer:
             value = getattr(importlib.import_module('.'.join(class_import_path[:-1])), class_import_path[-1])
         elif value in ['True', 'False']:
             value = True if value == 'True' else False
+        elif isinstance(value, (int, float, bool, dict)):
+            value = value
         else:
             for caster in (int, float):
                 try:
@@ -104,7 +106,7 @@ class OptionContainer:
         """
         if isinstance(value, OptionContainer):
             value = value.get_serializable_dict()
-        elif isinstance(value, dict):
+        elif isinstance(value, (dict, int, float, bool)):
             value = value
         elif isinstance(value, (tuple, list)):
             value = [self.object_to_string(key, x) for x in value]
