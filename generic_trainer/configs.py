@@ -241,6 +241,8 @@ class InferenceConfig(Config):
         value = super().string_to_object(key, value)
         if key == 'model_save_dir':
             self.pretrained_model_path = os.path.join(value, 'best_model.pth')
+        if key == 'pretrained_model_path' and value is None:
+            value = self.pretrained_model_path
         return value
 
 
