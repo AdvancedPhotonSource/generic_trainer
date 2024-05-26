@@ -17,6 +17,10 @@ from generic_trainer.metrics import *
 
 @dataclasses.dataclass
 class OptionContainer:
+
+    class SkipKey:
+        pass
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.globals = {}
@@ -48,7 +52,9 @@ class OptionContainer:
 
     def deserizalize_dict(self, d):
         for key in d.keys():
-            self.__dict__[key] = self.string_to_object(key, d[key])
+            v = self.string_to_object(key, d[key])
+            if not isinstance(v, self.SkipKey):
+                self.__dict__[key] = v
 
     def dump_to_json(self, filename):
         try:
@@ -98,6 +104,8 @@ class OptionContainer:
                         "globals() to load_from_json:\n"
                         "    configs.load_from_json(filename, namespace=globals())\n".format(key, e)
                     )
+        elif key == 'config_class':
+            return self.SkipKey()
         elif isinstance(value, (list, tuple)):
             value = [self.string_to_object(key, v) for v in value]
         elif isinstance(value, str) and (res := re.match(r"<class '(.+)'>", value)):
