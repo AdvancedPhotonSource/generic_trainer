@@ -995,7 +995,8 @@ class Trainer:
         self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
         if state_dict['scheduler_state_dict'] is not None:
             self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
-        self.loss_tracker = state_dict['loss_tracker']
+        for k, v in state_dict['loss_tracker'].items():
+            self.loss_tracker[k] = v
 
     def write_training_info(self):
         if not self.gatekeeper.should_proceed(gate_kept=True):

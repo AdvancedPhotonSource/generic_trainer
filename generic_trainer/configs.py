@@ -364,10 +364,10 @@ class TrainingConfig(Config):
     loss_function: Union[Callable, list[Callable, ...]] = torch.nn.CrossEntropyLoss()
     """
     The loss function. This could be either a Callable (like torch.nn.L1Loss) or a list of Callables.
-    When it is a list, its length should be at least `len(pred_names)` and the Callables are respectively applied
-    to predictions following the order of `pred_names`. If there are more Callables than `len(pred_names)`,
+    When it is a list, its length should be at least `len(pred_names_and_types)` and the Callables are respectively applied
+    to predictions following the order of `pred_names_and_types`. If there are more Callables than `len(pred_names)`,
     the rest of them are treated as regularizers and are called like `func(**pred_dict)`, where `pred_dict`
-    is a dictionary whose keys are elements in `pred_names` and values are the corresponding predictions.  
+    is a dictionary whose keys are elements in `pred_names_and_types` and values are the corresponding predictions.  
     """
 
     loss_tracker_params: LossTrackerParameters = dataclasses.field(default_factory=LossTrackerParameters)
