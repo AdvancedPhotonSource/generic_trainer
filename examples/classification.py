@@ -54,7 +54,7 @@ if __name__ == '__main__':
         parallelization_params=ParallelizationConfig(
             parallelization_type='single_node'
         ),
-        pred_names=('pred1', 'pred2'),
+        pred_names_and_types=(('pred1', 'cls'), ('pred2', 'cls')),
         dataset=dataset,
         batch_size_per_process=2,
         learning_rate_per_process=1e-2,

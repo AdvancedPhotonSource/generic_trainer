@@ -68,7 +68,7 @@ if __name__ == '__main__':
         parallelization_params=ParallelizationConfig(
             parallelization_type='single_node'
         ),
-        pred_names=('mag', 'phase'),
+        pred_names_and_types=(('mag', 'regr'), ('phase', 'regr')),
         dataset=dataset,
         batch_size_per_process=2,
         learning_rate_per_process=1e-2,

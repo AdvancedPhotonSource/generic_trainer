@@ -49,7 +49,7 @@ class MultirankGateKeeper:
 
 class LossTracker(dict):
 
-    def __init__(self, pred_names=('cs', 'eg', 'sg'), *args, **kwargs):
+    def __init__(self, pred_names_and_types=(('cs', 'cls'), ('eg', 'cls'), ('sg', 'cls')), *args, **kwargs):
         """
         A dictionary-like object that stores the values of losses.
 
@@ -63,11 +63,18 @@ class LossTracker(dict):
         - `lrs`: 1D list. The history of learning rate. *The LRs may be updated every minibatch in contrast to losses
                  which are updated every opech.*
 
-        :param pred_names: tuple(str). Names of predicted quantities.
+        :param pred_names_and_types: Tuple[Tuple[str, str], ...]. Names and types of predicted quantities.
+            The type for each prediction can be:
+                - 'cls': a classification prediction.
+                - 'regr': a regression prediction. 
         """
         super().__init__(*args, **kwargs)
-        self.pred_names = pred_names
-        self.n_preds = len(pred_names)
+        self.pred_names_and_types = pred_names_and_types
+        self.pred_names = []
+        self.cls_pred_names = []
+        self.regr_pred_names = []
+        self.categorize_predictions()
+        self.n_preds = len(pred_names_and_types)
         self['epochs'] = []
         self['loss'] = []
         self['val_loss'] = []
@@ -82,11 +89,24 @@ class LossTracker(dict):
             self['val_loss_{}'.format(pred_name)] = []
             self['best_val_loss_{}'.format(pred_name)] = np.inf
             self['test_loss_{}'.format(pred_name)] = []
+        for pred_name in self.cls_pred_names:
             self['train_acc_{}'.format(pred_name)] = []
             self['val_acc_{}'.format(pred_name)] = []
             self['test_acc_{}'.format(pred_name)] = []
             self['classification_preds_{}'.format(pred_name)] = []
             self['classification_labels_{}'.format(pred_name)] = []
+
+    def categorize_predictions(self):
+        assert (len(self.pred_names_and_types[0]) > 1, 
+            'Prediction names and types should be both given.')
+        for x in self.pred_names_and_types:
+            self.pred_names.append(x[0])
+            if x[1] == 'cls':
+                self.cls_pred_names.append(x[0])
+            elif x[1] == 'regr':
+                self.regr_pred_names.append(x[0])
+            else:
+                raise ValueError('Unrecognized prediction name/type: {}'.format(x))
 
     def update_losses(self, losses, type='loss', epoch=None, lr=None):
         """
@@ -171,7 +191,7 @@ class LossTracker(dict):
             plt.savefig(save_path)
 
     def clear_classification_results_and_labels(self):
-        for pred_name in self.pred_names:
+        for pred_name in self.cls_pred_names:
             self['classification_preds_{}'.format(pred_name)] = []
             self['classification_labels_{}'.format(pred_name)] = []
 
@@ -186,7 +206,7 @@ class LossTracker(dict):
         """
         pred_dict = {}
         label_dict = {}
-        for i, pred_name in enumerate(self.pred_names):
+        for i, pred_name in enumerate(self.cls_pred_names):
             inds_pred = torch.argmax(preds[i], dim=1)
             inds_label = torch.argmax(labels[i], dim=1)
             pred_dict[pred_name] = inds_pred
@@ -199,7 +219,7 @@ class LossTracker(dict):
         Calculate classification accuracies at the end of an epoch using the recorded predictions and labels.
         """
         acc_dict = {}
-        for i, pred_name in enumerate(self.pred_names):
+        for i, pred_name in enumerate(self.cls_pred_names):
             inds_pred = self['classification_preds_{}'.format(pred_name)]
             inds_label = self['classification_labels_{}'.format(pred_name)]
             acc = np.mean((np.array(inds_pred) == np.array(inds_label)))
@@ -214,7 +234,7 @@ class LossTracker(dict):
                          the accuracy of that catefory for all samples in the current epoch.
         :param type: str. Can be 'train' or 'val'.
         """
-        for i, pred_name in enumerate(self.pred_names):
+        for i, pred_name in enumerate(self.cls_pred_names):
             if '{}_acc_{}'.format(type, pred_name) not in self.keys():
                 self['{}_acc_{}'.format(type, pred_name)] = []
             self['{}_acc_{}'.format(type, pred_name)].append(acc_dict[pred_name])
@@ -226,7 +246,7 @@ class LossTracker(dict):
         n_ranks = comm.Get_size()
         if n_ranks == 1:
             return
-        for i, pred_name in enumerate(self.pred_names):
+        for i, pred_name in enumerate(self.cls_pred_names):
             assert isinstance(self['classification_preds_{}'.format(pred_name)], list)
             self['classification_preds_{}'.format(pred_name)] = (
                 comm.allreduce(self['classification_preds_{}'.format(pred_name)], op=MPI.SUM))
@@ -417,14 +437,14 @@ class Trainer:
         if ('pred_names_and_num_classes' in self.configs.model_params.__dict__.keys() and
                 'pred_names' in self.configs.__dict__.keys()):
             pred_names_model_params = [x[0] for x in self.configs.model_params.pred_names_and_num_classes]
-            pred_names_configs = list(self.configs.pred_names)
+            pred_names_configs = [x[0] for x in self.configs.pred_names_and_types]
             if pred_names_model_params != pred_names_configs:
                 warnings.warn('pred_names in model_params and configs are not the same: it is {} and {}.'.format(
                     pred_names_model_params, pred_names_configs
                 ))
 
     def build_loss_tracker(self):
-        self.loss_tracker = LossTracker(pred_names=self.configs.pred_names,
+        self.loss_tracker = LossTracker(pred_names_and_types=self.configs.pred_names_and_types,
                                         **self.configs.loss_tracker_params.__dict__)
 
     def build_dir(self):
@@ -572,8 +592,8 @@ class Trainer:
         :return: dict.
         """
         d = {}
-        for i, name in enumerate(self.configs.pred_names):
-            d[name] = preds[i]
+        for i, name in enumerate(self.configs.pred_names_and_types):
+            d[name] = preds[i][0]
         return d
 
     def process_data_loader_yield_sample_first(self, data_and_labels, data_label_separation_index):
@@ -1015,7 +1035,8 @@ class Trainer:
         plt.savefig(os.path.join(self.configs.model_save_dir, 'loss_history.png'))
 
     def plot_accuracy_history(self):
-        for name in self.configs.pred_names:
+        for pred_name_type in self.configs.pred_names_and_types:
+            name = pred_name_type[0]
             self.loss_tracker.plot(
                 quantities=('train_acc_{}'.format(name), 'val_acc_{}'.format(name)),
                 save_path=os.path.join(self.configs.model_save_dir,
@@ -1372,7 +1393,7 @@ class PyTorchLightningTrainer(Trainer):
         if hasattr(lightning_model.gtrainer.loss_criterion, '__len__'):
             n_losses = len(lightning_model.gtrainer.loss_criterion) + 1
         else:
-            n_losses = len(lightning_model.gtrainer.configs.pred_names) + 1
+            n_losses = len(lightning_model.gtrainer.configs.pred_names_and_types) + 1
         data, labels = lightning_model.gtrainer.process_data_loader_yield(batch)
         preds = lightning_model(*data)
         _, total_loss_tensor = lightning_model.gtrainer.compute_losses([0.0] * n_losses, preds, labels)

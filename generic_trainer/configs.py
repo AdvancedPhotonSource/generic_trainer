@@ -1,7 +1,7 @@
 import copy
 import collections
 import dataclasses
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, Tuple
 import json
 import os
 import re
@@ -221,8 +221,14 @@ class Config(OptionContainer):
     dataset: Optional[Dataset] = None
     """The dataset object."""
 
-    pred_names: Any = ('cs', 'eg', 'sg')
-    """Names of the quantities predicted by the model."""
+    pred_names_and_types: Tuple[Tuple[str, str], ...] = (('cs', 'cls'), ('eg', 'cls'), ('sg', 'cls'))
+    """
+    Names and types of the quantities predicted by the model. It should be a tuple of 2-tuples.
+    The first element of each sub-tuple is the name of the prediction, and the second element is
+    its type, which can be one of:
+    - 'cls': a classification prediction.
+    - 'regr': a regression prediction. 
+    """
 
     debug: bool = False
 
