@@ -592,8 +592,8 @@ class Trainer:
         :return: dict.
         """
         d = {}
-        for i, name in enumerate(self.configs.pred_names_and_types):
-            d[name] = preds[i][0]
+        for i, name_and_type in enumerate(self.configs.pred_names_and_types):
+            d[name_and_type[0]] = preds[i]
         return d
 
     def process_data_loader_yield_sample_first(self, data_and_labels, data_label_separation_index):
