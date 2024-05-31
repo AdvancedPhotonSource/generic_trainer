@@ -1,3 +1,4 @@
+import copy
 import collections
 import dataclasses
 from typing import Any, Callable, Optional, Union
@@ -33,6 +34,19 @@ class OptionContainer:
 
     def __repr__(self):
         return self.__str__()
+
+    @staticmethod
+    def remove(*fields):
+        def _(cls):
+            fields_copy = copy.copy(cls.__dataclass_fields__)
+            annotations_copy = copy.deepcopy(cls.__annotations__)
+            for field in fields:
+                del fields_copy[field]
+                del annotations_copy[field]
+            d_cls = dataclasses.make_dataclass(cls.__name__, annotations_copy)
+            d_cls.__dataclass_fields__ = fields_copy
+            return d_cls
+        return _
 
     @staticmethod
     def is_jsonable(x):
