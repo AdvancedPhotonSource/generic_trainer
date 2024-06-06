@@ -814,19 +814,36 @@ class Trainer:
                                      "one.".format(self.model.__class__))
         else:
             trainable_params = self.model.parameters()
-        if isinstance(self.configs.optimizer, str):
-            if self.configs.optimizer == 'adam':
-                self.optimizer = torch.optim.Adam(trainable_params, lr=self.learning_rate)
-        else:
+        if self.configs.multi_optimizer_param_dicts is None:
             self.optimizer = self.configs.optimizer(trainable_params, lr=self.learning_rate,
+                                                    **self.configs.optimizer_params)
+        else:
+            # Construct per-parameter dicts
+            perparam_dicts = []
+            for i, d in enumerate(self.configs.multi_optimizer_param_dicts):
+                d_copy = d.copy()
+                d_copy['params'] = eval(d['params'])
+                if 'lr' in d_copy.keys():
+                    d_copy['lr'] = d_copy['lr'] * self.num_processes
+                perparam_dicts.append(d_copy)
+            self.optimizer = self.configs.optimizer(perparam_dicts, lr=self.learning_rate,
                                                     **self.configs.optimizer_params)
 
     def build_scheduler(self):
         self.iterations_per_epoch = len(self.training_dataset) / self.all_proc_batch_size
         self.iterations_per_epoch = np.ceil(self.iterations_per_epoch)
         step_size = 6 * self.iterations_per_epoch
-        self.scheduler = torch.optim.lr_scheduler.CyclicLR(self.optimizer, base_lr=self.learning_rate / 10,
-                                                           max_lr=self.learning_rate, step_size_up=step_size,
+        if self.configs.multi_optimizer_param_dicts is None:
+            base_lr=self.learning_rate * 0.1
+            max_lr=self.learning_rate
+        else:
+            base_lr = []
+            max_lr = []
+            for d in self.optimizer.param_groups:
+                base_lr.append(d['lr'] * 0.1)
+                max_lr.append(self.learning_rate)
+        self.scheduler = torch.optim.lr_scheduler.CyclicLR(self.optimizer, base_lr=base_lr,
+                                                           max_lr=max_lr, step_size_up=step_size,
                                                            cycle_momentum=False, mode='triangular2')
 
     def build_amp(self):

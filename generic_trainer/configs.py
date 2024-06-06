@@ -1,7 +1,7 @@
 import copy
 import collections
 import dataclasses
-from typing import Any, Callable, Optional, Union, Tuple
+from typing import *
 import json
 import os
 import re
@@ -322,11 +322,20 @@ class TrainingConfig(Config):
     or processes.
     """
 
-    optimizer: Any = torch.optim.Adam
-    """String of optimizer name or the handle of a subclass of torch.optim.Optimizer"""
+    optimizer: Type[torch.optim.Optimizer] = torch.optim.Adam
+    """The optimizer class. Should be given as the handle of a subclass of torch.optim.Optimizer."""
 
     optimizer_params: dict = dataclasses.field(default_factory=dict)
     """Optimizer parameters."""
+
+    multi_optimizer_param_dicts: Optional[Sequence[Dict]] = None
+    """
+    The optimizer uses different learning rates for different parameters if this is provided.
+    It should be a list of dictionaries as described in 
+    https://pytorch.org/docs/stable/optim.html#per-parameter-options.
+    However, the code to get trainable parameters in the "params" keys should be given
+    as a string, where the model object should be referenced as `self.get_model_object()`.
+    """
 
     model_save_dir: str = '.'
     """Directory to save trained models."""
