@@ -683,6 +683,9 @@ class Trainer:
             if self.use_torch_amp:
                 es.enter_context(torch.autocast(device_type=self.device.type, dtype=torch.float16))
             preds = self.model(*data)
+            # If preds is a single tensor, wrap it in a list
+            if isinstance(preds, torch.Tensor):
+                preds = [preds]
             losses, total_loss_tensor = self.compute_losses(loss_buffer, preds, labels)
         return loss_buffer, total_loss_tensor, preds, labels
 
@@ -1177,6 +1180,9 @@ class Pretrainer(Trainer):
         # elements of data are supposed to be 2 different augmentations.
         data, _ = self.process_data_loader_yield(data)
         preds = self.model(*data)
+        # If preds is a single tensor, wrap it in a list
+        if isinstance(preds, torch.Tensor):
+            preds = [preds]
         losses, total_loss_tensor = self.compute_losses(loss_buffer, preds)
         return loss_buffer, total_loss_tensor, preds, None
 
@@ -1414,6 +1420,9 @@ class PyTorchLightningTrainer(Trainer):
             n_losses = len(lightning_model.gtrainer.configs.pred_names_and_types) + 1
         data, labels = lightning_model.gtrainer.process_data_loader_yield(batch)
         preds = lightning_model(*data)
+        # If preds is a single tensor, wrap it in a list
+        if isinstance(preds, torch.Tensor):
+            preds = [preds]
         _, total_loss_tensor = lightning_model.gtrainer.compute_losses([0.0] * n_losses, preds, labels)
         return total_loss_tensor
 
