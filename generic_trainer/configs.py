@@ -94,6 +94,7 @@ class OptionContainer:
     def string_to_object(self, key, value):
         """
         Create an object based on the string value of a config key.
+        
         :param key: str.
         :param value: str.
         :return: object.
@@ -228,6 +229,13 @@ class Config(OptionContainer):
     its type, which can be one of:
     - 'cls': a classification prediction.
     - 'regr': a regression prediction. 
+    """
+    
+    dataset_creator_name: Optional[str] = None
+    """
+    Name of the data creator function. This parameter is not used by the trainer itself, but the training
+    script can use this parameter to locate a custom data creator function that creates the training,
+    va
     """
 
     debug: bool = False
