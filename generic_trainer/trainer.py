@@ -703,8 +703,11 @@ class Trainer:
             self.run_model_update_step(total_loss_tensor)
 
             # Update the LR according to the schedule -- CyclicLR updates each batch
-            self.scheduler.step()
-            self.loss_tracker['lrs'].append(self.scheduler.get_last_lr()[0])
+            if self.scheduler is not None:
+                self.scheduler.step()
+                self.loss_tracker['lrs'].append(self.scheduler.get_last_lr()[0])
+            else:
+                self.loss_tracker['lrs'].append(self.learning_rate)
 
             n_batches += 1
         # Divide cumulative loss by number of batches-- sli inaccurate because last batch is different size
@@ -833,6 +836,9 @@ class Trainer:
                                                     **self.configs.optimizer_params)
 
     def build_scheduler(self):
+        if self.configs.scheduler is None:
+            self.scheduler = None
+            return
         self.iterations_per_epoch = len(self.training_dataset) / self.all_proc_batch_size
         self.iterations_per_epoch = np.ceil(self.iterations_per_epoch)
         step_size = 6 * self.iterations_per_epoch
@@ -845,9 +851,9 @@ class Trainer:
             for d in self.optimizer.param_groups:
                 base_lr.append(d['lr'] * 0.1)
                 max_lr.append(self.learning_rate)
-        self.scheduler = torch.optim.lr_scheduler.CyclicLR(self.optimizer, base_lr=base_lr,
-                                                           max_lr=max_lr, step_size_up=step_size,
-                                                           cycle_momentum=False, mode='triangular2')
+        self.scheduler = self.configs.scheduler(self.optimizer, base_lr=base_lr,
+                                                max_lr=max_lr, step_size_up=step_size,
+                                                cycle_momentum=False, mode='triangular2')
 
     def build_amp(self):
         # Do not use torch.autocast and torch.GradScaler() in trainers using other backends like HuggingFace

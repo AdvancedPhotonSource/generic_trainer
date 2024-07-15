@@ -344,6 +344,11 @@ class TrainingConfig(Config):
     However, the code to get trainable parameters in the "params" keys should be given
     as a string, where the model object should be referenced as `self.get_model_object()`.
     """
+    
+    scheduler: Type[torch.optim.lr_scheduler._LRScheduler] = torch.optim.lr_scheduler.CyclicLR
+    """
+    The scheduler class. Should be given as the handle of a subclass of torch.optim.lr_scheduler._LRScheduler.
+    """
 
     model_save_dir: str = '.'
     """Directory to save trained models."""
