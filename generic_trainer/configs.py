@@ -13,25 +13,24 @@ from torch.utils.data import Dataset
 from generic_trainer.metrics import *
 
 
-def remove(*fields):
+def remove(*exclusions):
     """
-    A decorator that removes specified fields from a dataclass. Note: it may not work for multiple inheritance.
+    Remove fields from a dataclass. Note: if you use this on an inherited dataclass, 
+    isinstance(this_object, BaseClass) will return False. To avoid this, use a
+    class factory:
+    ```
+    def factory(base, name, exclusions):
+        new_fields = [(i.name, i.type, i) for i in fields(base) if i.name not in exclusions]
+        return make_dataclass(name, new_fields)
+
+    B = factory(base=A, name='B', exclusions=('b', 'c'))
+    ```
+    See https://stackoverflow.com/questions/69289547/how-to-remove-dynamically-fields-from-a-dataclass.
     """
-    def _(cls):
-        print(cls)
-        print(list(cls.__dataclass_fields__.keys()))
-        fields_copy = copy.copy(cls.__dataclass_fields__)
-        annotations_copy = copy.deepcopy(cls.__annotations__)
-        for field in fields:
-            try:
-                del fields_copy[field]
-                del annotations_copy[field]
-            except KeyError:
-                pass
-        d_cls = dataclasses.make_dataclass(cls.__name__, annotations_copy)
-        d_cls.__dataclass_fields__ = fields_copy
-        return d_cls
-    return _
+    def wrapper(cls):
+        new_fields = [(i.name, i.type, i) for i in dataclasses.fields(cls) if i.name not in exclusions]
+        return dataclasses.make_dataclass(cls.__name__, new_fields)
+    return wrapper
 
 # =============================
 # Base class for all
