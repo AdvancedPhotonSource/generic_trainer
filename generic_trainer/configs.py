@@ -12,6 +12,27 @@ from torch.utils.data import Dataset
 
 from generic_trainer.metrics import *
 
+
+def remove(*fields):
+    """
+    A decorator that removes specified fields from a dataclass. Note: it may not work for multiple inheritance.
+    """
+    def _(cls):
+        print(cls)
+        print(list(cls.__dataclass_fields__.keys()))
+        fields_copy = copy.copy(cls.__dataclass_fields__)
+        annotations_copy = copy.deepcopy(cls.__annotations__)
+        for field in fields:
+            try:
+                del fields_copy[field]
+                del annotations_copy[field]
+            except KeyError:
+                pass
+        d_cls = dataclasses.make_dataclass(cls.__name__, annotations_copy)
+        d_cls.__dataclass_fields__ = fields_copy
+        return d_cls
+    return _
+
 # =============================
 # Base class for all
 # =============================

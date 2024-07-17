@@ -97,8 +97,7 @@ class LossTracker(dict):
             self['classification_labels_{}'.format(pred_name)] = []
 
     def categorize_predictions(self):
-        assert (len(self.pred_names_and_types[0]) > 1, 
-            'Prediction names and types should be both given.')
+        assert len(self.pred_names_and_types[0]) > 1, 'Prediction names and types should be both given.'
         for x in self.pred_names_and_types:
             self.pred_names.append(x[0])
             if x[1] == 'cls':
