@@ -255,7 +255,13 @@ class Config(OptionContainer):
     """
     Name of the data creator function. This parameter is not used by the trainer itself, but the training
     script can use this parameter to locate a custom data creator function that creates the training,
-    va
+    validation, and test sets. 
+    """
+    
+    data_label_separation_index: Optional[int] = 1
+    """
+    The index of label in the returned tuple of the dataset object. All elements at and after this index
+    are assumed to be labels, while those before this index are assumed to be data.
     """
 
     debug: bool = False

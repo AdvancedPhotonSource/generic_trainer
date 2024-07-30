@@ -675,7 +675,8 @@ class Trainer:
                             The elements should be constant values, not differentiable tensors.
         :return: loss_buffer, total_loss_tensor, preds, labels
         """
-        data, labels = self.process_data_loader_yield(data_and_labels)
+        data, labels = self.process_data_loader_yield(data_and_labels, 
+                                                      data_label_separation_index=self.configs.data_label_separation_index)
         with ExitStack() as es:
             # torch.autocast would raise an exception about CPU data type even when enabled == False, so
             # we use ExitStack to control the entrance of this context on a higher level.
@@ -985,7 +986,8 @@ class Trainer:
             m = self.model.module
         else:
             m = self.model
-        sample_data, _ = self.process_data_loader_yield(self.training_dataset[0])
+        sample_data, _ = self.process_data_loader_yield(self.training_dataset[0], 
+                                                        data_label_separation_index=self.configs.data_label_separation_index)
         rand_inputs = tuple([torch.randn(self.configs.batch_size_per_process, *d.shape[1:], device=self.device)
                              for d in sample_data])
         torch.onnx.export(m, rand_inputs, f=path)
@@ -1423,7 +1425,9 @@ class PyTorchLightningTrainer(Trainer):
             n_losses = len(lightning_model.gtrainer.loss_criterion) + 1
         else:
             n_losses = len(lightning_model.gtrainer.configs.pred_names_and_types) + 1
-        data, labels = lightning_model.gtrainer.process_data_loader_yield(batch)
+        data, labels = lightning_model.gtrainer.process_data_loader_yield(
+            batch, 
+            data_label_separation_index=lightning_model.gtrainer.configs.data_label_separation_index)
         preds = lightning_model(*data)
         # If preds is a single tensor, wrap it in a list
         if isinstance(preds, torch.Tensor):
