@@ -512,18 +512,18 @@ class Trainer:
                                                   batch_size=self.all_proc_batch_size,
                                                   collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                   generator=self.get_dataloader_generator(), num_workers=0,
-                                                  drop_last=False)
+                                                  drop_last=False, pin_memory=self.configs.pin_memory_for_dataloader)
             self.validation_dataloader = DataLoader(self.validation_dataset, shuffle=True,
                                                     batch_size=self.all_proc_batch_size,
                                                     collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                     generator=self.get_dataloader_generator(), num_workers=0,
-                                                    drop_last=False)
+                                                    drop_last=False, pin_memory=self.configs.pin_memory_for_dataloader)
             if self.test_dataset is not None:
                 self.test_dataloader = DataLoader(self.test_dataset, shuffle=True,
                                                   batch_size=self.all_proc_batch_size,
                                                   collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                   generator=self.get_dataloader_generator(), num_workers=0,
-                                                  drop_last=False)
+                                                  drop_last=False, pin_memory=self.configs.pin_memory_for_dataloader)
 
     def run_training(self):
         for self.current_epoch in range(self.current_epoch, self.num_epochs):

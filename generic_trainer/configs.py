@@ -420,6 +420,9 @@ class TrainingConfig(Config):
 
     loss_tracker_params: LossTrackerParameters = dataclasses.field(default_factory=LossTrackerParameters)
     """Arguments of the loss tracker."""
+    
+    pin_memory_for_dataloader: bool = True
+    """If True, dataloader will put fetched data tensor in pinned memory, which accelerates training."""
 
     automatic_mixed_precision: bool = False
     """Automatic mixed precision and gradient scaling are enabled if True."""
