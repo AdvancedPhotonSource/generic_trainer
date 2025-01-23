@@ -363,6 +363,7 @@ class Trainer:
         self.rank = rank
         self.device = self.get_device()
         self.num_workers = self.configs.num_workers if self.configs.num_workers is not None else 0
+        self.prefetch_factor = 10 if self.num_workers > 0 else None
         self.all_proc_batch_size = self.configs.batch_size_per_process
         self.learning_rate = self.configs.learning_rate_per_process
         self.num_epochs = self.configs.num_epochs
@@ -565,18 +566,18 @@ class Trainer:
             # distributed training across multiple nodes. Therefore, `num_workers` is set to 0. See also:
             # https://docs.alcf.anl.gov/polaris/data-science-workflows/frameworks/pytorch/.
             self.training_dataloader = DataLoader(self.training_dataset, shuffle=True,
-                                                  batch_size=self.all_proc_batch_size, prefetch_factor=10,
+                                                  batch_size=self.all_proc_batch_size, prefetch_factor=self.prefetch_factor,
                                                   collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                   generator=self.get_dataloader_generator(), num_workers=self.num_workers,
                                                   drop_last=False, pin_memory=self.configs.pin_memory_for_dataloader)
             self.validation_dataloader = DataLoader(self.validation_dataset, shuffle=True,
-                                                    batch_size=self.all_proc_batch_size, prefetch_factor=10,
+                                                    batch_size=self.all_proc_batch_size, prefetch_factor=self.prefetch_factor,
                                                     collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                     generator=self.get_dataloader_generator(), num_workers=self.num_workers,
                                                     drop_last=False, pin_memory=self.configs.pin_memory_for_dataloader)
             if self.test_dataset is not None:
                 self.test_dataloader = DataLoader(self.test_dataset, shuffle=True,
-                                                  batch_size=self.all_proc_batch_size, prefetch_factor=10,
+                                                  batch_size=self.all_proc_batch_size, prefetch_factor=self.prefetch_factor,
                                                   collate_fn=lambda x: x, worker_init_fn=self.get_worker_seed_func(),
                                                   generator=self.get_dataloader_generator(), num_workers=self.num_workers,
                                                   drop_last=False, pin_memory=self.configs.pin_memory_for_dataloader)
