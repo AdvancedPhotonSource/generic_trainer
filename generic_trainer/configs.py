@@ -421,6 +421,9 @@ class TrainingConfig(Config):
     loss_tracker_params: LossTrackerParameters = dataclasses.field(default_factory=LossTrackerParameters)
     """Arguments of the loss tracker."""
     
+    num_workers: int = 0
+    """Number of workers for dataloader."""
+    
     pin_memory_for_dataloader: bool = True
     """If True, dataloader will put fetched data tensor in pinned memory, which accelerates training."""
 
