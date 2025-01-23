@@ -248,7 +248,7 @@ class LossTracker(dict):
         for i, pred_name in enumerate(self.regr_pred_names):
             preds = self['regression_preds_{}'.format(pred_name)]
             labels = self['regression_labels_{}'.format(pred_name)]
-            acc = r2_score(labels, preds, multioutput='uniform_average')
+            acc = r2_score(labels.flatten(start_dim=1), preds.flatten(start_dim=1), multioutput='uniform_average')
             acc_dict[pred_name] = acc
         return acc_dict
 
