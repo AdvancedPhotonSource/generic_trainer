@@ -220,13 +220,9 @@ class LossTracker(dict):
             self['classification_labels_{}'.format(pred_name)] += inds_label.tolist()
 
     def update_regression_results_and_labels(self, preds, labels):
-        pred_dict = {}
-        label_dict = {}
         for i, pred_name in enumerate(self.regr_pred_names):
-            pred_dict[pred_name] = preds[i]
-            label_dict[pred_name] = labels[i]
-            self['regression_preds_{}'.format(pred_name)] += preds[i].tolist()
-            self['regression_labels_{}'.format(pred_name)] += labels[i].tolist()
+            self['regression_preds_{}'.format(pred_name)] += preds[i].flatten(start_dim=1).tolist()
+            self['regression_labels_{}'.format(pred_name)] += labels[i].flatten(start_dim=1).tolist()
 
     def calculate_classification_accuracy(self):
         """
@@ -248,7 +244,7 @@ class LossTracker(dict):
         for i, pred_name in enumerate(self.regr_pred_names):
             preds = self['regression_preds_{}'.format(pred_name)]
             labels = self['regression_labels_{}'.format(pred_name)]
-            acc = r2_score(labels.flatten(start_dim=1), preds.flatten(start_dim=1), multioutput='uniform_average')
+            acc = r2_score(labels, preds, multioutput='uniform_average')
             acc_dict[pred_name] = acc
         return acc_dict
 
