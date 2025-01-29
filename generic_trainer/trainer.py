@@ -1103,7 +1103,7 @@ class Trainer:
         checkpoint_fname = os.path.join(self.configs.checkpoint_dir, 'checkpoint.state')
         if not os.path.exists(checkpoint_fname):
             logging.warning('Checkpoint not found in {}.'.format(checkpoint_fname))
-        state_dict = torch.load(checkpoint_fname)
+        state_dict = torch.load(checkpoint_fname, weights_only=False)
         self.current_epoch = state_dict['current_epoch']
         self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
         if state_dict['scheduler_state_dict'] is not None:
