@@ -751,16 +751,16 @@ class Trainer:
     def run_training_epoch(self):
         losses = self.get_epoch_loss_buffer()
         n_batches = 0
-        if 'classification' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
             self.loss_tracker.clear_classification_results_and_labels()
-        if 'regression' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.clear_regression_results_and_labels()
 
         for i, data_and_labels in enumerate(tqdm(self.training_dataloader, disable=(not self.verbose))):
             losses, total_loss_tensor, preds, labels = self.load_data_and_get_loss(data_and_labels, losses)
-            if 'classification' in self.configs.task_type:
+            if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
                 self.loss_tracker.update_classification_results_and_labels(preds, labels)
-            if 'regression' in self.configs.task_type:
+            if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
                 self.loss_tracker.update_regression_results_and_labels(preds, labels)
 
             # Zero current grads and do backprop
@@ -778,11 +778,11 @@ class Trainer:
         losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
         self.loss_tracker.update_losses(losses, type='loss', epoch=self.current_epoch)
 
-        if 'classification' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
             self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_classification_accuracy_history(acc_dict, 'train')
-        if 'regression' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.sync_regression_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_regression_accuracy()
             self.loss_tracker.update_regression_accuracy_history(acc_dict, 'train')
@@ -793,15 +793,15 @@ class Trainer:
     def run_validation(self):
         losses = self.get_epoch_loss_buffer()
         n_batches = 0
-        if 'classification' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
             self.loss_tracker.clear_classification_results_and_labels()
-        if 'regression' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.clear_regression_results_and_labels()
         for j, data_and_labels in enumerate(self.validation_dataloader):
             losses, _, preds, labels = self.load_data_and_get_loss(data_and_labels, losses)
-            if 'classification' in self.configs.task_type:
+            if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
                 self.loss_tracker.update_classification_results_and_labels(preds, labels)
-            if 'regression' in self.configs.task_type:
+            if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
                 self.loss_tracker.update_regression_results_and_labels(preds, labels)
             n_batches += 1
         if n_batches == 0:
@@ -818,11 +818,11 @@ class Trainer:
                 last_best_val_loss, self.loss_tracker['best_val_loss']))
             self.update_saved_model(filename='best_model.pth', save_onnx=self.configs.save_onnx)
 
-        if 'classification' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
             self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_classification_accuracy_history(acc_dict, 'val')
-        if 'regression' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.sync_regression_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_regression_accuracy()
             self.loss_tracker.update_regression_accuracy_history(acc_dict, 'val')
@@ -833,16 +833,16 @@ class Trainer:
     def run_test(self):
         losses = self.get_epoch_loss_buffer()
         n_batches = 0
-        if 'classification' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
             self.loss_tracker.clear_classification_results_and_labels()
-        if 'regression' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.clear_regression_results_and_labels()
 
         for j, data_and_labels in enumerate(self.test_dataloader):
             losses, _, preds, labels = self.load_data_and_get_loss(data_and_labels, losses)
-            if 'classification' in self.configs.task_type:
+            if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
                 self.loss_tracker.update_classification_results_and_labels(preds, labels)
-            if 'regression' in self.configs.task_type:
+            if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
                 self.loss_tracker.update_regression_results_and_labels(preds, labels)
                 
             n_batches += 1
@@ -853,11 +853,11 @@ class Trainer:
         losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
         self.loss_tracker.update_losses(losses, epoch=self.current_epoch, type='test_loss')
 
-        if 'classification' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
             self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_classification_accuracy_history(acc_dict, 'test')
-        if 'regression' in self.configs.task_type:
+        if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.sync_regression_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_regression_accuracy()
             self.loss_tracker.update_regression_accuracy_history(acc_dict, 'test')
