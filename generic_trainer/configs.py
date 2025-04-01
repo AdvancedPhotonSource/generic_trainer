@@ -433,6 +433,13 @@ class TrainingConfig(Config):
     save_onnx: bool = False
     """If True, ONNX models are saved along with state dicts."""
 
+    curriculum_learning_rate: float = 0.
+    """A value between 0 and 1. If nonzero, the rate (in fraction of batch per epoch) at which the predicted labels
+    should be used over the true ones to determine the regression head to use for branched regression. All true labels
+    will always be used in the first epoch, and subsequently, this fraction will be reduced by the curriculum learning
+    rate at each epoch until only predicted labels are used.
+    """
+
     def string_to_object(self, key, value):
         value = super().string_to_object(key, value)
         if key == 'loss_function' and not isinstance(value, (list, tuple)):

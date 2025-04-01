@@ -365,7 +365,7 @@ class Trainer:
         self.rank = rank
         self.device = self.get_device()
         self.num_workers = self.configs.num_workers if self.configs.num_workers is not None else 0
-        self.prefetch_factor = None #10 if self.num_workers > 0 else None
+        self.prefetch_factor = None
         self.all_proc_batch_size = self.configs.batch_size_per_process
         self.learning_rate = self.configs.learning_rate_per_process
         self.num_epochs = self.configs.num_epochs
@@ -373,6 +373,7 @@ class Trainer:
         self.scheduler = None
         self.loss_tracker = None
         self.loss_criterion = self.configs.loss_function
+        self.curriculum_learning_rate = self.configs.curriculum_learning_rate if self.configs.curriculum_learning_rate is not None else 0
         self.iterations_per_epoch = 0
         self.current_epoch = 0
         self.use_torch_amp = False
