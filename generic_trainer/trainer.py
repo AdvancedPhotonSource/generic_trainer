@@ -632,7 +632,10 @@ class Trainer:
                 this_loss_weight = 1.
             else:
                 this_loss_func = self.loss_criterion[i_pred]
-                this_loss_weight = self.loss_weights[i_pred]
+                if isinstance(self.loss_weights, float):
+                    this_loss_weight = self.loss_weights
+                else:
+                    this_loss_weight = self.loss_weights[i_pred]
             # Try casting labels to be the same type as preds. If it doesn't work, use the original type.
             try:
                 this_loss_tensor = this_loss_func(preds[i_pred], labels[i_pred].type(preds[i_pred].dtype))
