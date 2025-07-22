@@ -227,8 +227,8 @@ class LossTracker(dict):
 
     def update_regression_results_and_labels(self, preds, labels):
         for i, pred_name in enumerate(self.regr_pred_names):
-            self['regression_preds_{}'.format(pred_name)] += preds[i].flatten(start_dim=1).tolist()
-            self['regression_labels_{}'.format(pred_name)] += labels[i].flatten(start_dim=1).tolist()
+            self['regression_preds_{}'.format(pred_name)] += preds[len(self.cls_pred_names) + i].flatten(start_dim=1).tolist()
+            self['regression_labels_{}'.format(pred_name)] += labels[len(self.cls_pred_names) + i].flatten(start_dim=1).tolist()
 
     def calculate_classification_accuracy(self):
         """
@@ -250,6 +250,13 @@ class LossTracker(dict):
         for i, pred_name in enumerate(self.regr_pred_names):
             preds = self['regression_preds_{}'.format(pred_name)]
             labels = self['regression_labels_{}'.format(pred_name)]
+            if len(preds[0]) > len(labels[0]):
+                # Applicable to branched regression
+                preds = np.array(preds).reshape(len(labels), -1, len(labels[0]))
+                labels_expanded = np.array(labels).reshape(len(labels), 1, -1)
+                mse_per_chunk = ((preds - labels_expanded) ** 2).mean(axis=2)
+                inds_min = np.argmin(mse_per_chunk, axis=1)
+                preds = preds[np.arange(len(preds)),inds_min].tolist()
             acc = r2_score(labels, preds, multioutput='uniform_average')
             acc_dict[pred_name] = acc
         return acc_dict
@@ -373,6 +380,7 @@ class Trainer:
         self.scheduler = None
         self.loss_tracker = None
         self.loss_criterion = self.configs.loss_function
+        self.loss_weights = self.configs.loss_weights
         self.curriculum_learning_rate = self.configs.curriculum_learning_rate if self.configs.curriculum_learning_rate is not None else 0
         self.iterations_per_epoch = 0
         self.current_epoch = 0
@@ -621,14 +629,16 @@ class Trainer:
         for i_pred in range(len(preds)):
             if isinstance(self.loss_criterion, Callable):
                 this_loss_func = self.loss_criterion
+                this_loss_weight = 1.
             else:
                 this_loss_func = self.loss_criterion[i_pred]
+                this_loss_weight = self.loss_weights[i_pred]
             # Try casting labels to be the same type as preds. If it doesn't work, use the original type.
             try:
                 this_loss_tensor = this_loss_func(preds[i_pred], labels[i_pred].type(preds[i_pred].dtype))
             except:
                 this_loss_tensor = this_loss_func(preds[i_pred], labels[i_pred])
-            total_loss_tensor = total_loss_tensor + this_loss_tensor
+            total_loss_tensor = total_loss_tensor + this_loss_weight * this_loss_tensor
             loss_records[i_pred + 1] += this_loss_tensor.detach().item()
 
         if hasattr(self.loss_criterion, '__len__') and len(self.loss_criterion) > len(preds):
@@ -773,16 +783,17 @@ class Trainer:
                 self.loss_tracker['lrs'].append(self.scheduler.get_last_lr()[0])
             else:
                 self.loss_tracker['lrs'].append(self.learning_rate)
-
             n_batches += 1
+            
         # Divide cumulative loss by number of batches-- sli inaccurate because last batch is different size
         losses = [self.communicate_value_across_ranks(l / n_batches, mode='average') for l in losses]
         self.loss_tracker.update_losses(losses, type='loss', epoch=self.current_epoch)
-
+        
         if (self.configs.task_type is not None) and ('classification' in self.configs.task_type):
             self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_classification_accuracy_history(acc_dict, 'train')
+
         if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.sync_regression_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_regression_accuracy()
@@ -823,6 +834,7 @@ class Trainer:
             self.loss_tracker.sync_classification_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_classification_accuracy()
             self.loss_tracker.update_classification_accuracy_history(acc_dict, 'val')
+
         if (self.configs.task_type is not None) and ('regression' in self.configs.task_type):
             self.loss_tracker.sync_regression_preds_and_labels_across_ranks()
             acc_dict = self.loss_tracker.calculate_regression_accuracy()
@@ -965,6 +977,9 @@ class Trainer:
                 if self.configs.load_pretrained_encoder_only:
                     logging.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path, subcomponent='backbone_model')
+                elif self.configs.load_pretrained_classifier:
+                    logging.info('Loading pretrained classifier from {}.'.format(self.configs.pretrained_model_path))
+                    self.load_model(self.configs.pretrained_model_path, subcomponent=['backbone_model', 'classification_heads'])
                 else:
                     logging.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path)
@@ -981,6 +996,9 @@ class Trainer:
                 if self.configs.load_pretrained_encoder_only:
                     logging.info('Loading pretrained encoder from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path, subcomponent='backbone_model')
+                elif self.configs.load_pretrained_classifier:
+                    logging.info('Loading pretrained classifier from {}.'.format(self.configs.pretrained_model_path))
+                    self.load_model(self.configs.pretrained_model_path, subcomponent=['backbone_model', 'classification_heads'])
                 else:
                     logging.info('Loading pretrained model from {}.'.format(self.configs.pretrained_model_path))
                     self.load_model(self.configs.pretrained_model_path)
@@ -1015,6 +1033,26 @@ class Trainer:
         else:
             raise ValueError('{} is not a valid parallelization type.'.format(self.parallelization_type))
 
+    def filter_state_dict(self, state_dict, subcomponents):
+        """
+        Filter a state_dict to only include keys that start with any of the subcomponents in the list.
+        
+        Args:
+            state_dict (dict): The original state_dict from the pretrained model
+            subcomponents (list): List of subcomponent names to include
+            
+        Returns:
+            dict: Filtered state_dict containing only the specified subcomponents
+        """
+        filtered_state_dict = {}
+        
+        for key, value in state_dict.items():
+            # Check if the key starts with any of the subcomponent names
+            if any(key.startswith(component) for component in subcomponents):
+                filtered_state_dict[key] = value
+                
+        return filtered_state_dict
+
     def load_model(self, path=None, state_dict=None, subcomponent=None):
         if path is not None:
             if self.parallelization_type == 'single_node':
@@ -1028,6 +1066,9 @@ class Trainer:
             m = self.model
         if subcomponent is None:
             m.load_state_dict(state_dict)
+        elif isinstance(subcomponent, list):
+            # Load a partial state_dict of only specified subcomponents
+            m.load_state_dict(self.filter_state_dict(state_dict, subcomponent), strict=False)
         else:
             getattr(m, subcomponent).load_state_dict(state_dict)
 
@@ -1336,6 +1377,8 @@ class HuggingFaceAccelerateTrainer(Trainer):
         if self.configs.pretrained_model_path is not None:
             if self.configs.load_pretrained_encoder_only:
                 self.load_model(self.configs.pretrained_model_path, subcomponent='encoder')
+            elif self.configs.load_pretrained_classifier:
+                self.load_model(self.configs.pretrained_model_path, subcomponent=['backbone_model', 'classification_heads'])
             else:
                 self.load_model(self.configs.pretrained_model_path)
         elif self.configs.checkpoint_dir is not None:

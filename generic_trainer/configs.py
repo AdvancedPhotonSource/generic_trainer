@@ -291,7 +291,10 @@ class InferenceConfig(Config):
 
     load_pretrained_encoder_only: bool = False
     """Keep this False for testing."""
-
+    
+    load_pretrained_classifier: bool = False
+    """Keep this False for testing."""
+    
     batch_size_per_process: int = 64
     """The batch size per process."""
 
@@ -397,6 +400,9 @@ class TrainingConfig(Config):
     load_pretrained_encoder_only: bool = False
     """If True, only the pretrained encoder (backbone) will be loaded if `pretrained_model_path` is not None."""
 
+    load_pretrained_classifer: bool = False
+    """If True, only the pretrained classifier (backbone + classification heads) will be loaded if `pretrained_model_path` is not None."""
+
     validation_ratio: float = 0.1
     """Ratio of data to be used as validation set."""
 
@@ -418,6 +424,13 @@ class TrainingConfig(Config):
     is a dictionary whose keys are elements in `pred_names_and_types` and values are the corresponding predictions.  
     """
 
+    loss_weights: Union[float, list[float, ...]] = 1.
+    """
+    The weights to apply to each loss function in the total loss summation. This could be either a float or list of floats.
+    When it is a list, its length should match that of the loss function list and the weights are respectively applied
+    to losses following the order of `pred_names_and_types`.
+    """
+    
     loss_tracker_params: LossTrackerParameters = dataclasses.field(default_factory=LossTrackerParameters)
     """Arguments of the loss tracker."""
     
